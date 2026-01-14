@@ -8,7 +8,10 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 export const analyzeLegacyCodebase = async (fullCode: string) => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Analyze this COBOL banking system source code. Provide a high-level architecture overview, identify key business entities, and suggest an incremental migration strategy to Python. 
+    contents: `Analyze this COBOL banking system source code. 
+    1. Extract a "System Blueprint" that defines every high-level business capability.
+    2. Identify key domain entities and their relationships.
+    3. Suggest a microservices-oriented rewrite strategy.
     Code snippet: ${fullCode.substring(0, 10000)}...`,
     config: {
       temperature: 0.2,
@@ -21,7 +24,8 @@ export const analyzeLegacyCodebase = async (fullCode: string) => {
 export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: { name: string, code: string }[] }> => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Split the following COBOL source code into logical functional modules (e.g., File Definitions, Transaction Logic, Report Generation). 
+    contents: `Split the following COBOL source code into logical business modules. 
+    Focus on functional boundaries (e.g., Ledger Updates, Interest Calculation, KYC Validation).
     Return a JSON array of objects with 'name' and 'code' keys.
     Code:
     ${fullCode}`,
@@ -55,43 +59,60 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
   }
 };
 
-export const translateChunk = async (chunk: CodeChunk) => {
+export const processModuleLogic = async (chunk: CodeChunk): Promise<{ pythonSource: string, businessRules: string }> => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: `
-    Act as a senior software architect specializing in Mainframe Modernization.
-    Translate the following COBOL module to modern, scalable Python 3.12+.
+    Act as a Business Analyst and Senior Architect. 
+    Review the following COBOL module: ${chunk.name}.
     
-    Guidelines:
-    1. Use modern patterns (FastAPI style if applicable, Pydantic for data validation, or SQLAlchemy for database logic).
-    2. Ensure business logic is strictly preserved.
-    3. Include high-quality docstrings and type hints.
-    4. Ensure the output is clean, readable, and PEP8 compliant.
+    TASK 1: BUSINESS RULE MINING
+    Extract all underlying business rules, data validations, and logic flows. 
+    Describe them in human-readable, plain English for a product owner. 
+    Ignore legacy hardware constraints; focus on functional intent.
     
-    COBOL Module Name: ${chunk.name}
+    TASK 2: CLEAN-SHEET MODERNIZATION
+    Rewrite this logic into modern Python 3.12+ using a Domain-Driven Design (DDD) approach.
+    Use Pydantic for models and type safety.
+    
     COBOL Source:
     ${chunk.cobolSource}
     `,
     config: {
       temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 8000 }
+      thinkingConfig: { thinkingBudget: 12000 }, // High budget for deep rule extraction
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          pythonSource: { type: Type.STRING },
+          businessRules: { type: Type.STRING }
+        },
+        required: ['pythonSource', 'businessRules']
+      }
     }
   });
-  return response.text;
+  
+  try {
+    return JSON.parse(response.text || '{"pythonSource": "", "businessRules": ""}');
+  } catch (e) {
+    console.error("Failed to parse module logic", e);
+    return { pythonSource: response.text || "", businessRules: "Extraction failed. See technical source for logic." };
+  }
 };
 
 export const generateTests = async (pythonCode: string, cobolReference: string): Promise<{ testCode: string, coverageEstimate: number }> => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: `
-    Generate comprehensive Pytest unit tests for the following Python code, ensuring it handles the edge cases described or implied in the original COBOL logic.
-    Also provide an estimated code coverage percentage (integer 0-100) that these tests would achieve for the provided Python code.
-    
-    Original COBOL Logic Reference:
-    ${cobolReference}
+    Generate Pytest unit tests based on the extracted business logic and original COBOL source.
+    Ensure edge cases from the legacy system are covered.
     
     Python Code:
     ${pythonCode}
+    
+    COBOL Reference:
+    ${cobolReference}
     `,
     config: {
       temperature: 0.1,
@@ -110,7 +131,6 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
   try {
     return JSON.parse(response.text || '{"testCode": "", "coverageEstimate": 0}');
   } catch (e) {
-    console.error("Failed to parse tests response", e);
     return { testCode: response.text || "", coverageEstimate: 0 };
   }
 };

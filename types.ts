@@ -13,6 +13,7 @@ export interface CodeChunk {
   cobolSource: string;
   pythonSource?: string;
   unitTest?: string;
+  businessRules?: string; // Human-readable business logic extraction
   coverage?: number; // Estimated unit test coverage percentage
   status: 'PENDING' | 'DONE' | 'ERROR';
   analysis?: string;
