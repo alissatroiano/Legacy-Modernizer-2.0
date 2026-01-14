@@ -2,7 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CodeChunk } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Always use the API key directly from the environment variable as per guidelines.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const analyzeLegacyCodebase = async (fullCode: string) => {
   const response = await ai.models.generateContent({

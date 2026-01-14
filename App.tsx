@@ -23,7 +23,8 @@ import {
   Database,
   ArrowRightLeft,
   ChevronDown,
-  Download
+  Download,
+  Upload
 } from 'lucide-react';
 import { MigrationStatus, MigrationState, CodeChunk } from './types';
 import * as gemini from './services/geminiService';
@@ -40,10 +41,43 @@ const App: React.FC = () => {
   const [inputCode, setInputCode] = useState<string>('');
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [logs, setLogs] = useState<{msg: string, type: 'info' | 'success' | 'error'}[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const addLog = useCallback((msg: string, type: 'info' | 'success' | 'error' = 'info') => {
     setLogs(prev => [...prev, { msg, type }]);
   }, []);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    addLog(`Reading ${files.length} file(s)...`, 'info');
+    
+    // Fix: Explicitly type the files array to avoid 'unknown' errors in forEach.
+    (Array.from(files) as File[]).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        if (content) {
+          setInputCode(prev => prev ? prev + '\n\n' + content : content);
+          addLog(`Loaded: ${file.name} (${file.size} bytes)`, 'success');
+        }
+      };
+      reader.onerror = () => {
+        addLog(`Failed to read file: ${file.name}`, 'error');
+      };
+      reader.readAsText(file);
+    });
+    
+    // Reset input value so the same file can be uploaded again if needed
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
+  };
 
   const handleStartMigration = async () => {
     if (!inputCode.trim()) {
@@ -157,6 +191,16 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
+      {/* Hidden File Input */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        multiple 
+        accept=".cbl,.cob,.txt,.src" 
+        onChange={handleFileUpload} 
+      />
+
       {/* Header */}
       <header className="bg-slate-900 text-white p-4 border-b border-slate-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -188,13 +232,20 @@ const App: React.FC = () => {
                 <FileCode className="w-4 h-4 text-indigo-600" />
                 <span>Source COBOL</span>
               </div>
-              <span className="text-xs text-slate-400 uppercase tracking-widest">Mainframe</span>
+              <button 
+                onClick={triggerFileUpload}
+                disabled={migrationState.status !== MigrationStatus.IDLE}
+                className="flex items-center space-x-1.5 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100 uppercase transition-all"
+              >
+                <Upload className="w-3 h-3" />
+                <span>Upload Files</span>
+              </button>
             </div>
             <textarea 
               value={inputCode}
               onChange={(e) => setInputCode(e.target.value)}
               className="w-full h-80 p-4 code-font text-sm bg-slate-900 text-indigo-200 focus:outline-none resize-none"
-              placeholder="PASTE YOUR COBOL CODE HERE..."
+              placeholder="PASTE YOUR COBOL CODE HERE OR UPLOAD DOCUMENTS..."
               disabled={migrationState.status !== MigrationStatus.IDLE}
             />
             <div className="p-4 bg-white">
