@@ -80,11 +80,12 @@ export const translateChunk = async (chunk: CodeChunk) => {
   return response.text;
 };
 
-export const generateTests = async (pythonCode: string, cobolReference: string) => {
+export const generateTests = async (pythonCode: string, cobolReference: string): Promise<{ testCode: string, coverageEstimate: number }> => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: `
     Generate comprehensive Pytest unit tests for the following Python code, ensuring it handles the edge cases described or implied in the original COBOL logic.
+    Also provide an estimated code coverage percentage (integer 0-100) that these tests would achieve for the provided Python code.
     
     Original COBOL Logic Reference:
     ${cobolReference}
@@ -93,8 +94,23 @@ export const generateTests = async (pythonCode: string, cobolReference: string) 
     ${pythonCode}
     `,
     config: {
-      temperature: 0.1
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          testCode: { type: Type.STRING },
+          coverageEstimate: { type: Type.INTEGER }
+        },
+        required: ['testCode', 'coverageEstimate']
+      }
     }
   });
-  return response.text;
+  
+  try {
+    return JSON.parse(response.text || '{"testCode": "", "coverageEstimate": 0}');
+  } catch (e) {
+    console.error("Failed to parse tests response", e);
+    return { testCode: response.text || "", coverageEstimate: 0 };
+  }
 };

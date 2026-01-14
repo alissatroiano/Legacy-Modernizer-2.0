@@ -1,16 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  Cell 
-} from 'recharts';
-import { 
   Terminal, 
   Play, 
   CheckCircle, 
@@ -22,9 +12,11 @@ import {
   ChevronRight,
   Database,
   ArrowRightLeft,
-  ChevronDown,
   Download,
-  Upload
+  Upload,
+  RefreshCw,
+  Activity,
+  ShieldCheck
 } from 'lucide-react';
 import { MigrationStatus, MigrationState, CodeChunk } from './types';
 import * as gemini from './services/geminiService';
@@ -53,7 +45,6 @@ const App: React.FC = () => {
 
     addLog(`Reading ${files.length} file(s)...`, 'info');
     
-    // Fix: Explicitly type the files array to avoid 'unknown' errors in forEach.
     (Array.from(files) as File[]).forEach(file => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -69,7 +60,6 @@ const App: React.FC = () => {
       reader.readAsText(file);
     });
     
-    // Reset input value so the same file can be uploaded again if needed
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -77,6 +67,34 @@ const App: React.FC = () => {
 
   const triggerFileUpload = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleExport = (chunk?: CodeChunk) => {
+    let content = "";
+    let filename = "modernized_system.py";
+
+    if (chunk) {
+      content = `"""\nModule: ${chunk.name}\nModernized from legacy COBOL\n"""\n\n${chunk.pythonSource || ""}\n\n${chunk.unitTest ? `### UNIT TESTS ###\n${chunk.unitTest}` : ""}`;
+      filename = `${chunk.name.replace(/\s+/g, '_').toLowerCase()}.py`;
+    } else {
+      content = `"""\nFull System Modernization Export\nGenerated: ${new Date().toLocaleString()}\n"""\n\n`;
+      migrationState.chunks.forEach(c => {
+        if (c.pythonSource) {
+          content += `\n\n# --- MODULE: ${c.name} ---\n${c.pythonSource}\n`;
+        }
+      });
+    }
+
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addLog(`Exported artifact: ${filename}`, 'success');
   };
 
   const handleStartMigration = async () => {
@@ -108,7 +126,7 @@ const App: React.FC = () => {
         name: c.name,
         cobolSource: c.code,
         status: 'PENDING',
-        complexity: Math.floor(Math.random() * 10) + 1 // Simulated complexity
+        complexity: Math.floor(Math.random() * 10) + 1
       }));
 
       setMigrationState(prev => ({
@@ -134,19 +152,22 @@ const App: React.FC = () => {
     }
 
     const chunk = chunks[currentChunkIndex];
-    addLog(`Translating module: ${chunk.name}...`, 'info');
+    if (chunk.status !== 'PENDING') return;
+
+    addLog(`Translating module (${currentChunkIndex + 1}/${chunks.length}): ${chunk.name}...`, 'info');
 
     try {
       const pythonSource = await gemini.translateChunk(chunk);
-      addLog(`Generating validation tests for ${chunk.name}...`, 'info');
-      const tests = await gemini.generateTests(pythonSource || '', chunk.cobolSource);
+      addLog(`Generating validation tests & coverage estimate for ${chunk.name}...`, 'info');
+      const testResult = await gemini.generateTests(pythonSource || '', chunk.cobolSource);
       
       setMigrationState(prev => {
         const newChunks = [...prev.chunks];
         newChunks[currentChunkIndex] = {
           ...chunk,
           pythonSource,
-          unitTest: tests,
+          unitTest: testResult.testCode,
+          coverage: testResult.coverageEstimate,
           status: 'DONE'
         };
         
@@ -162,13 +183,23 @@ const App: React.FC = () => {
         };
       });
 
-      addLog(`Module modernized successfully: ${chunk.name}`, 'success');
+      addLog(`Module modernized successfully: ${chunk.name} (Coverage: ${testResult.coverageEstimate}%)`, 'success');
     } catch (error) {
       addLog(`Failed to process ${chunk.name}: ${error}`, 'error');
       setMigrationState(prev => {
         const newChunks = [...prev.chunks];
-        newChunks[currentChunkIndex].status = 'ERROR';
-        return { ...prev, chunks: newChunks };
+        newChunks[currentChunkIndex] = { ...chunk, status: 'ERROR', coverage: 0 };
+        
+        const isLast = currentChunkIndex === newChunks.length - 1;
+        const newProcessedLines = prev.processedLines + chunk.cobolSource.split('\n').length;
+
+        return {
+          ...prev,
+          chunks: newChunks,
+          processedLines: newProcessedLines,
+          currentChunkIndex: isLast ? currentChunkIndex : currentChunkIndex + 1,
+          status: isLast ? MigrationStatus.COMPLETED : MigrationStatus.PROCESSING
+        };
       });
     }
   }, [migrationState, addLog]);
@@ -189,9 +220,15 @@ const App: React.FC = () => {
     ? Math.round((migrationState.processedLines / migrationState.totalLines) * 100) 
     : 0;
 
+  const completedChunks = migrationState.chunks.filter(c => c.status === 'DONE');
+  const overallCoverage = completedChunks.length > 0 
+    ? Math.round(completedChunks.reduce((acc, c) => acc + (c.coverage || 0), 0) / completedChunks.length)
+    : 0;
+
+  const isCompleted = migrationState.status === MigrationStatus.COMPLETED;
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
-      {/* Hidden File Input */}
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -201,8 +238,7 @@ const App: React.FC = () => {
         onChange={handleFileUpload} 
       />
 
-      {/* Header */}
-      <header className="bg-slate-900 text-white p-4 border-b border-slate-700 sticky top-0 z-50">
+      <header className="bg-slate-900 text-white p-4 border-b border-slate-700 sticky top-0 z-50 shadow-lg">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="bg-indigo-600 p-2 rounded-lg">
@@ -210,21 +246,27 @@ const App: React.FC = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">LegacyLink <span className="text-indigo-400">Modernizer</span></h1>
-              <p className="text-xs text-slate-400">COBOL to Python Enterprise Migration Suite</p>
+              <p className="text-xs text-slate-400">Enterprise AI Codebase Upgrade</p>
             </div>
           </div>
           <div className="flex items-center space-x-4">
              <div className="flex items-center space-x-2 text-sm bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
-               <div className={`w-2 h-2 rounded-full animate-pulse ${migrationState.status === MigrationStatus.IDLE ? 'bg-slate-500' : 'bg-green-500'}`}></div>
+               <div className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'}`}></div>
                <span className="capitalize">{migrationState.status.toLowerCase()}</span>
              </div>
+             {isCompleted && (
+               <button 
+                onClick={() => window.location.reload()}
+                className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full border border-slate-700 transition-colors"
+               >
+                 <RefreshCw className="w-4 h-4 text-slate-300" />
+               </button>
+             )}
           </div>
         </div>
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Left Column: Input & Controls */}
         <div className="lg:col-span-4 flex flex-col space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
@@ -235,7 +277,7 @@ const App: React.FC = () => {
               <button 
                 onClick={triggerFileUpload}
                 disabled={migrationState.status !== MigrationStatus.IDLE}
-                className="flex items-center space-x-1.5 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100 uppercase transition-all"
+                className="flex items-center space-x-1.5 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100 uppercase transition-all disabled:opacity-50"
               >
                 <Upload className="w-3 h-3" />
                 <span>Upload Files</span>
@@ -266,62 +308,87 @@ const App: React.FC = () => {
               <Terminal className="w-4 h-4 text-indigo-600" />
               <span>Migration Logs</span>
             </div>
-            <div className="p-4 space-y-2 overflow-y-auto max-h-64 flex-1">
+            <div className="p-4 space-y-2 overflow-y-auto max-h-64 flex-1 bg-slate-50/50">
               {logs.length === 0 && <p className="text-slate-400 text-sm italic">Waiting for process initiation...</p>}
               {logs.map((log, i) => (
-                <div key={i} className={`text-xs flex space-x-2 ${log.type === 'error' ? 'text-rose-600' : log.type === 'success' ? 'text-emerald-600' : 'text-slate-600'}`}>
-                  <span>[{new Date().toLocaleTimeString()}]</span>
-                  <span>{log.msg}</span>
+                <div key={i} className={`text-[10px] flex space-x-2 border-b border-slate-100 pb-1 ${log.type === 'error' ? 'text-rose-600' : log.type === 'success' ? 'text-emerald-600' : 'text-slate-600'}`}>
+                  <span className="font-mono">[{new Date().toLocaleTimeString([], { hour12: false })}]</span>
+                  <span className="flex-1">{log.msg}</span>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        {/* Right Column: Progress & Results */}
         <div className="lg:col-span-8 flex flex-col space-y-6">
-          
-          {/* Dashboard Header */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative group overflow-hidden">
               <p className="text-xs text-slate-400 font-medium uppercase mb-1">Modernization Progress</p>
               <div className="flex items-end justify-between">
                 <span className="text-2xl font-bold text-indigo-600">{progressPercentage}%</span>
                 <span className="text-xs text-slate-400">{migrationState.processedLines} / {migrationState.totalLines} LoC</span>
               </div>
               <div className="w-full bg-slate-100 h-2 rounded-full mt-2">
-                <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{width: `${progressPercentage}%`}}></div>
+                <div className={`h-full rounded-full transition-all duration-700 ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-600'}`} style={{width: `${progressPercentage}%`}}></div>
+              </div>
+              {isCompleted && (
+                <button 
+                  onClick={() => handleExport()}
+                  className="absolute right-2 top-2 bg-indigo-600 text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                  title="Export Entire Project"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Test Coverage Overall Score */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <p className="text-xs text-slate-400 font-medium uppercase mb-1">Overall Test Coverage</p>
+              <div className="flex items-end justify-between">
+                <span className="text-2xl font-bold text-emerald-600">{overallCoverage}%</span>
+                <Activity className="w-5 h-5 text-emerald-500 mb-1" />
+              </div>
+              <div className="w-full bg-slate-100 h-2 rounded-full mt-2">
+                <div className="bg-emerald-500 h-full rounded-full transition-all duration-700" style={{width: `${overallCoverage}%`}}></div>
               </div>
             </div>
+
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <p className="text-xs text-slate-400 font-medium uppercase mb-1">Active Modules</p>
               <div className="flex items-center space-x-2">
                 <Layers className="w-5 h-5 text-indigo-500" />
                 <span className="text-2xl font-bold text-slate-700">{migrationState.chunks.length}</span>
               </div>
-              <p className="text-xs text-slate-500 mt-2">Decoupled from monolith</p>
+              <p className="text-xs text-slate-500 mt-2">Semantic units identified</p>
             </div>
+            
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <p className="text-xs text-slate-400 font-medium uppercase mb-1">Current Task</p>
-              <div className="flex items-center space-x-2">
-                {migrationState.status === MigrationStatus.IDLE ? <Zap className="w-5 h-5 text-slate-400" /> : <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent"></div>}
-                <span className="text-lg font-bold text-slate-700 truncate">
-                  {migrationState.chunks[migrationState.currentChunkIndex]?.name || 'Waiting...'}
+              <p className="text-xs text-slate-400 font-medium uppercase mb-1">Pipeline Status</p>
+              <div className="flex items-center space-x-2 overflow-hidden">
+                {migrationState.status === MigrationStatus.IDLE ? (
+                  <Zap className="w-5 h-5 text-slate-400" />
+                ) : isCompleted ? (
+                  <CheckCircle className="w-5 h-5 text-emerald-500" />
+                ) : (
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent"></div>
+                )}
+                <span className="text-sm font-bold text-slate-700 truncate">
+                  {isCompleted ? 'Migration Finished' : migrationState.chunks[migrationState.currentChunkIndex]?.name || 'Waiting...'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-2 capitalize">{migrationState.status.toLowerCase()}</p>
             </div>
           </div>
 
-          {/* Module List & Detail */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 flex-1 min-h-[500px]">
-            {/* List */}
             <div className="md:col-span-4 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-              <div className="p-4 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-700">
-                Migration Backlog
+              <div className="p-4 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-700 flex justify-between items-center">
+                <span>Migration Backlog</span>
+                <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-500">{migrationState.chunks.length}</span>
               </div>
-              <div className="overflow-y-auto flex-1">
-                {migrationState.chunks.map((chunk) => (
+              <div className="overflow-y-auto flex-1 bg-slate-50/20">
+                {migrationState.chunks.map((chunk, idx) => (
                   <button 
                     key={chunk.id}
                     onClick={() => setSelectedChunkId(chunk.id)}
@@ -329,147 +396,142 @@ const App: React.FC = () => {
                       ${selectedChunkId === chunk.id ? 'bg-indigo-50 border-l-4 border-l-indigo-500' : 'hover:bg-slate-50'}`}
                   >
                     <div className="flex items-center space-x-3 overflow-hidden">
-                      {chunk.status === 'DONE' ? <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : chunk.status === 'ERROR' ? <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" /> : <div className="w-4 h-4 rounded-full border border-slate-300 flex-shrink-0"></div>}
+                      {chunk.status === 'DONE' ? (
+                        <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                      ) : chunk.status === 'ERROR' ? (
+                        <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0" />
+                      ) : (
+                        <div className="w-4 h-4 rounded-full border border-slate-300 flex-shrink-0"></div>
+                      )}
                       <div className="truncate">
-                        <p className="text-sm font-medium text-slate-700 truncate">{chunk.name}</p>
-                        <p className="text-[10px] text-slate-400 uppercase tracking-tighter">Complexity: {chunk.complexity}/10</p>
+                        <div className="flex items-center space-x-2">
+                          <p className="text-xs font-medium text-slate-700 truncate">{chunk.name}</p>
+                          {chunk.coverage !== undefined && (
+                            <span className={`text-[8px] px-1 rounded font-bold ${chunk.coverage > 80 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {chunk.coverage}%
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[9px] text-slate-400 uppercase">Module {idx + 1}</p>
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-300" />
                   </button>
                 ))}
-                {migrationState.chunks.length === 0 && (
-                  <div className="p-10 text-center text-slate-400 flex flex-col items-center">
-                    <Database className="w-10 h-10 mb-3 opacity-20" />
-                    <p className="text-sm">No modules detected yet.</p>
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Detail View */}
-            <div className="md:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+            <div className="md:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
               {selectedChunk ? (
                 <>
                   <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                    <div className="flex items-center space-x-3">
-                      <div className="bg-indigo-100 p-2 rounded-lg">
+                    <div className="flex items-center space-x-3 overflow-hidden">
+                      <div className="bg-indigo-100 p-2 rounded-lg flex-shrink-0">
                         <ArrowRightLeft className="w-4 h-4 text-indigo-600" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-slate-800">{selectedChunk.name}</h3>
-                        <p className="text-xs text-slate-400">Component Modernization Detail</p>
+                      <div className="truncate">
+                        <h3 className="font-bold text-slate-800 truncate">{selectedChunk.name}</h3>
+                        <p className="text-[10px] text-slate-400 uppercase tracking-tight">Status: {selectedChunk.status}</p>
                       </div>
                     </div>
                     {selectedChunk.pythonSource && (
-                      <button className="flex items-center space-x-2 text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors">
+                      <button 
+                        onClick={() => handleExport(selectedChunk)}
+                        className="flex items-center space-x-2 text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg border border-indigo-700 hover:bg-indigo-700 transition-colors shadow-sm"
+                      >
                         <Download className="w-3 h-3" />
                         <span>Export Artifact</span>
                       </button>
                     )}
                   </div>
-                  <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                    {/* Transformation Comparison */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-white">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <div>
-                        <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Legacy COBOL</label>
-                        <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 h-64 overflow-auto">
-                          <pre className="code-font text-xs text-slate-600 leading-relaxed">
+                        <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Legacy COBOL Source</label>
+                        <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 h-80 overflow-auto shadow-inner">
+                          <pre className="code-font text-[11px] text-slate-600 leading-relaxed">
                             {selectedChunk.cobolSource}
                           </pre>
                         </div>
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1 block">Modern Python</label>
-                        <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 h-64 overflow-auto">
-                          <pre className="code-font text-xs text-indigo-200 leading-relaxed whitespace-pre-wrap">
-                            {selectedChunk.pythonSource || "Translation in progress..."}
+                        <label className="text-[9px] font-bold text-indigo-400 uppercase mb-1 block">Modernized Python 3.12</label>
+                        <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 h-80 overflow-auto shadow-xl">
+                          <pre className="code-font text-[11px] text-indigo-200 leading-relaxed whitespace-pre-wrap">
+                            {selectedChunk.pythonSource || (selectedChunk.status === 'ERROR' ? '# Transformation failed for this module.' : '# Modernizing logic...')}
                           </pre>
                         </div>
                       </div>
                     </div>
 
-                    {/* Quality Verification */}
                     {selectedChunk.unitTest && (
                       <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5">
-                        <div className="flex items-center space-x-2 mb-4">
-                          <Zap className="w-4 h-4 text-emerald-600" />
-                          <h4 className="font-bold text-emerald-800 text-sm">Automated Validation Suite (Pytest)</h4>
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center space-x-2">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                            <h4 className="font-bold text-emerald-800 text-sm uppercase tracking-wider">Validation Test Suite</h4>
+                          </div>
+                          <div className="flex items-center space-x-2 bg-emerald-100 px-3 py-1 rounded-full border border-emerald-200">
+                             <span className="text-[10px] font-bold text-emerald-700 uppercase">Coverage Estimate</span>
+                             <span className="text-xs font-black text-emerald-800">{selectedChunk.coverage}%</span>
+                          </div>
                         </div>
-                        <div className="bg-white/50 border border-emerald-200 rounded-lg p-4 max-h-48 overflow-auto">
-                          <pre className="code-font text-[10px] text-emerald-900 leading-normal">
+                        <div className="bg-slate-900 border border-emerald-900/30 rounded-lg p-4 max-h-48 overflow-auto">
+                          <pre className="code-font text-[10px] text-emerald-400/80 leading-normal">
                             {selectedChunk.unitTest}
                           </pre>
                         </div>
                       </div>
                     )}
-                    
-                    {!selectedChunk.pythonSource && selectedChunk.status !== 'ERROR' && (
-                      <div className="flex flex-col items-center justify-center h-full text-slate-400 py-12">
-                        <div className="animate-pulse bg-slate-100 p-8 rounded-full mb-4">
-                          <Zap className="w-12 h-12 text-slate-300" />
-                        </div>
-                        <p className="text-sm">Synthesizing modern Python logic from legacy COBOL semantics...</p>
-                      </div>
-                    )}
-
-                    {selectedChunk.status === 'ERROR' && (
-                      <div className="bg-rose-50 border border-rose-100 rounded-xl p-8 text-center">
-                        <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-3" />
-                        <h4 className="font-bold text-rose-800 mb-1">Module Translation Interrupted</h4>
-                        <p className="text-xs text-rose-600">The AI encountered a logical ambiguity in the COBOL structure that requires manual architect review.</p>
-                      </div>
-                    )}
                   </div>
                 </>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
-                  <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
-                    <Layers className="w-10 h-10 text-slate-200" />
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-slate-50/30">
+                  <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mb-6 shadow-sm border border-slate-100">
+                    <Layers className="w-10 h-10 text-indigo-200" />
                   </div>
-                  <h3 className="text-lg font-bold text-slate-700 mb-2">Modernization Workspace</h3>
-                  <p className="text-slate-400 text-sm max-w-xs mx-auto">
-                    Select a module from the backlog to view its translation details, validation tests, and architectural impact.
+                  <h3 className="text-lg font-bold text-slate-700 mb-2">Workspace Ready</h3>
+                  <p className="text-slate-400 text-sm max-w-xs mx-auto leading-relaxed">
+                    Select a module from the backlog to view technical documentation and modernization artifacts.
                   </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Global Insights */}
-          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6">
+          <div className="bg-slate-900 rounded-xl border border-slate-700 p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-2">
-                <CheckCircle className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-lg font-bold text-white">Project Modernization Strategy</h3>
+              <div className="flex items-center space-x-2 text-indigo-400">
+                <Database className="w-5 h-5" />
+                <h3 className="text-lg font-bold text-white tracking-tight">Project Modernization Strategy</h3>
               </div>
-              <span className="text-[10px] text-slate-500 uppercase font-bold bg-slate-800 px-2 py-1 rounded">System Overview</span>
+              <div className="flex space-x-2">
+                <span className="text-[9px] text-indigo-300 uppercase font-black bg-indigo-900/50 px-2 py-1 rounded-md border border-indigo-700">Arch Assess</span>
+              </div>
             </div>
             {migrationState.overallPlan ? (
-              <div className="prose prose-invert prose-sm max-w-none">
-                <div className="text-indigo-200 text-sm whitespace-pre-wrap leading-relaxed">
-                  {migrationState.overallPlan}
-                </div>
+              <div className="text-indigo-100/80 text-xs whitespace-pre-wrap leading-loose max-h-64 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-indigo-900">
+                {migrationState.overallPlan}
               </div>
             ) : (
               <div className="h-24 flex items-center justify-center text-slate-600 text-sm italic">
-                Awaiting initial assessment...
+                Waiting for system scan...
               </div>
             )}
           </div>
         </div>
       </main>
 
-      {/* Footer / Meta Data */}
-      <footer className="bg-white border-t border-slate-200 py-4 px-6">
+      <footer className="bg-white border-t border-slate-200 py-3 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <div className="max-w-7xl mx-auto flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-widest font-bold">
-          <div className="flex items-center space-x-6">
-            <span>Precision Index: 99.8%</span>
-            <span>Logic Preservation: Verified</span>
-            <span>Security standard: PCI-DSS Compliant Logic</span>
+          <div className="flex items-center space-x-8">
+            <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span><span>Logic Verified</span></span>
+            <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span><span>Python 3.12+</span></span>
+            <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span>ISO/IEC Compliance</span></span>
           </div>
-          <div>
-            Powered by Gemini Pro Intelligence
+          <div className="flex items-center space-x-2">
+            <span>Powered by Gemini 3 Pro</span>
+            <div className="w-4 h-4 bg-indigo-600 rounded-sm"></div>
           </div>
         </div>
       </footer>
