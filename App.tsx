@@ -252,7 +252,7 @@ const App: React.FC = () => {
               <Cpu className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight">LegacyLink <span className="text-indigo-400">Blueprint</span></h1>
+              <h1 className="text-xl font-bold tracking-tight">LegacyLink <span className="text-indigo-400">AI</span></h1>
               <p className="text-xs text-slate-400">Enterprise Mainframe to Modern Logic Recovery</p>
             </div>
           </div>
