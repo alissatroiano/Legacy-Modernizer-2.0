@@ -287,7 +287,6 @@ const App: React.FC = () => {
               <h1 className="text-xl font-black tracking-tight flex items-center space-x-2">
                 <span>LegacyLink</span>
                 <span className="text-sky-400">AI</span>
-                <span className="text-[10px] bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2 py-0.5 rounded-full font-bold ml-2 italic tracking-tighter">HACKATHON EDITION</span>
               </h1>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Autonomous Self-Healing Migration Agent</p>
             </div>
