@@ -14,15 +14,36 @@ export interface CopybookField {
   description: string;
 }
 
+export interface CloudMapping {
+  legacyComponent: string;
+  gcpService: string;
+  rationale: string;
+}
+
+export interface GroundingSource {
+  title: string;
+  uri: string;
+}
+
+export interface TestResult {
+  name: string;
+  status: 'PASSED' | 'FAILED';
+  message?: string;
+  duration: string;
+}
+
 export interface CodeChunk {
   id: string;
   name: string;
   cobolSource: string;
   pythonSource?: string;
   unitTest?: string;
-  businessRules?: string; // Human-readable business logic extraction
-  copybookStructure?: CopybookField[]; // Parsed field mappings
-  coverage?: number; // Estimated unit test coverage percentage
+  testResults?: TestResult[];
+  businessRules?: string;
+  copybookStructure?: CopybookField[];
+  cloudTargetArchitecture?: CloudMapping[];
+  groundingSources?: GroundingSource[];
+  coverage?: number;
   status: 'PENDING' | 'DONE' | 'ERROR';
   analysis?: string;
   complexity: number;
@@ -35,4 +56,5 @@ export interface MigrationState {
   currentChunkIndex: number;
   status: MigrationStatus;
   overallPlan?: string;
+  globalGroundingSources?: GroundingSource[];
 }
