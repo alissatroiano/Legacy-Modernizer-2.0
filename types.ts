@@ -7,6 +7,13 @@ export enum MigrationStatus {
   FAILED = 'FAILED'
 }
 
+export interface CopybookField {
+  originalField: string;
+  pythonMapping: string;
+  dataType: string;
+  description: string;
+}
+
 export interface CodeChunk {
   id: string;
   name: string;
@@ -14,6 +21,7 @@ export interface CodeChunk {
   pythonSource?: string;
   unitTest?: string;
   businessRules?: string; // Human-readable business logic extraction
+  copybookStructure?: CopybookField[]; // Parsed field mappings
   coverage?: number; // Estimated unit test coverage percentage
   status: 'PENDING' | 'DONE' | 'ERROR';
   analysis?: string;

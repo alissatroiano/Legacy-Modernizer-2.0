@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { CodeChunk } from "../types";
+import { CodeChunk, CopybookField } from "../types";
 
 // Always use the API key directly from the environment variable as per guidelines.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -62,25 +62,27 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
   }
 };
 
-export const processModuleLogic = async (chunk: CodeChunk): Promise<{ pythonSource: string, businessRules: string }> => {
+export const processModuleLogic = async (chunk: CodeChunk): Promise<{ pythonSource: string, businessRules: string, copybookStructure: CopybookField[] }> => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: `
-    Act as a Mainframe Modernization Architect.
+    Act as a Mainframe Modernization Architect and Senior Python Engineer.
     Review the following COBOL module: ${chunk.name}.
     
     TASK 1: BUSINESS RULE MINING & DATA ARCHAEOLOGY
     - Extract business rules and logic flows.
     - Identify Legacy Data Artifacts:
         * EBCDIC mappings: How are COMP and COMP-3 fields treated? (Map them to Python Decimal/Fixed-point).
-        * Copybook Resolution: If COPY statements exist, infer the record structure.
-        * File I/O: Map VSAM/Sequential access to modern SQLAlchemy or File Stream patterns.
-    - Describe these in plain English for a non-technical stakeholder.
+        * Copybook Resolution: Parse all record structures (01, 05, etc. levels) and map them to their Python counterparts.
+        * File I/O: Map VSAM/Sequential access to modern Repository patterns.
     
-    TASK 2: CLEAN-SHEET MODERNIZATION
+    TASK 2: CLEAN-SHEET MODERNIZATION WITH ROBUST ERROR HANDLING
     - Rewrite into modern Python 3.12+ (DDD approach).
-    - Use Pydantic for data structures, ensuring precision for banking math (no floats for currency!).
-    - Abstract legacy file handling into clean Repository patterns.
+    - Use Pydantic for data structures.
+    
+    TASK 3: DATA STRUCTURE MAPPING (COPYBOOK)
+    - Provide a structured list of every field identified in the COBOL (from WORKING-STORAGE or LINKAGE SECTION).
+    - Map each field to its specific Python attribute name in the generated code.
     
     COBOL Source:
     ${chunk.cobolSource}
@@ -93,18 +95,35 @@ export const processModuleLogic = async (chunk: CodeChunk): Promise<{ pythonSour
         type: Type.OBJECT,
         properties: {
           pythonSource: { type: Type.STRING },
-          businessRules: { type: Type.STRING }
+          businessRules: { type: Type.STRING },
+          copybookStructure: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                originalField: { type: Type.STRING },
+                pythonMapping: { type: Type.STRING },
+                dataType: { type: Type.STRING },
+                description: { type: Type.STRING }
+              },
+              required: ['originalField', 'pythonMapping', 'dataType', 'description']
+            }
+          }
         },
-        required: ['pythonSource', 'businessRules']
+        required: ['pythonSource', 'businessRules', 'copybookStructure']
       }
     }
   });
   
   try {
-    return JSON.parse(response.text || '{"pythonSource": "", "businessRules": ""}');
+    return JSON.parse(response.text || '{"pythonSource": "", "businessRules": "", "copybookStructure": []}');
   } catch (e) {
     console.error("Failed to parse module logic", e);
-    return { pythonSource: response.text || "", businessRules: "Extraction failed. See technical source for logic." };
+    return { 
+      pythonSource: response.text || "", 
+      businessRules: "Extraction failed.", 
+      copybookStructure: [] 
+    };
   }
 };
 
@@ -113,10 +132,7 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
     model: 'gemini-3-flash-preview',
     contents: `
     Generate Pytest unit tests for this modern Python implementation of legacy COBOL logic.
-    Focus on:
-    1. Precision verification for decimal/banking math.
-    2. Boundary testing for record structures previously defined in Copybooks.
-    3. Mocking legacy file I/O (VSAM/Sequential) to ensure logic is storage-agnostic.
+    Focus on precision, boundary testing, and error handling for bad data or I/O interruptions.
     
     Python Code:
     ${pythonCode}

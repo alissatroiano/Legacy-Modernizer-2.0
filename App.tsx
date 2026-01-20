@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   Terminal, 
   Play, 
@@ -22,10 +22,78 @@ import {
   FileSearch,
   FlaskConical,
   Binary,
-  HardDrive
+  HardDrive,
+  ShieldAlert,
+  Loader2,
+  Table,
+  Link2
 } from 'lucide-react';
-import { MigrationStatus, MigrationState, CodeChunk } from './types';
+import { MigrationStatus, MigrationState, CodeChunk, CopybookField } from './types';
 import * as gemini from './services/geminiService';
+
+/**
+ * Renders large code strings progressively to keep the UI responsive.
+ */
+const ProgressiveCodeBlock: React.FC<{ 
+  code?: string; 
+  className?: string; 
+  placeholder?: string;
+  chunkSize?: number;
+}> = ({ code, className, placeholder, chunkSize = 80 }) => {
+  const [displayLines, setDisplayLines] = useState<string[]>([]);
+  const [isFinished, setIsFinished] = useState(false);
+  
+  useEffect(() => {
+    if (!code) {
+      setDisplayLines([]);
+      setIsFinished(true);
+      return;
+    }
+
+    const allLines = code.split('\n');
+    const total = allLines.length;
+    
+    // Initial batch
+    setDisplayLines(allLines.slice(0, chunkSize));
+    setIsFinished(chunkSize >= total);
+    
+    let currentIdx = chunkSize;
+    let frameId: number;
+
+    const streamLines = () => {
+      if (currentIdx >= total) {
+        setIsFinished(true);
+        return;
+      }
+      
+      const endIdx = Math.min(currentIdx + chunkSize, total);
+      const nextBatch = allLines.slice(currentIdx, endIdx);
+      
+      setDisplayLines(prev => [...prev, ...nextBatch]);
+      currentIdx = endIdx;
+      frameId = requestAnimationFrame(streamLines);
+    };
+
+    frameId = requestAnimationFrame(streamLines);
+    return () => cancelAnimationFrame(frameId);
+  }, [code, chunkSize]);
+
+  if (!code && placeholder) {
+    return <pre className={className}>{placeholder}</pre>;
+  }
+
+  return (
+    <pre className={className}>
+      {displayLines.join('\n')}
+      {!isFinished && (
+        <div className="flex items-center space-x-2 mt-4 text-indigo-500/60 font-sans italic text-[10px]">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          <span>Streaming logic artifacts... ({displayLines.length} lines visible)</span>
+        </div>
+      )}
+    </pre>
+  );
+};
 
 const App: React.FC = () => {
   const [migrationState, setMigrationState] = useState<MigrationState>({
@@ -86,7 +154,7 @@ const App: React.FC = () => {
     } else {
       content = `# System Modernization Blueprint\nGenerated: ${new Date().toLocaleString()}\n\n## Global Architecture Strategy\n${migrationState.overallPlan || ""}\n\n`;
       migrationState.chunks.forEach(c => {
-        content += `\n---\n# Module: ${c.name}\n\n### Business Rules\n${c.businessRules || "Pending extraction..."}\n\n### Modern Python Implementation\n\`\`\`python\n${c.pythonSource || ""}\n\`\`\`\n\n### Validation Tests\n\`\`\`python\n${c.unitTest || ""}\n\`\`\`\n`;
+        content += `\n---\n# Module: ${c.name}\n\n### Business Rules\n${c.businessRules || "Pending extraction..."}\n\n### Modern Python Implementation\n\`\`\`python\n${c.pythonSource || ""}\n\`\`\`\n\n### Validation Tests\n\`\`\`python\n${c.unitTest || ""}\n\`\`\``;
       });
     }
 
@@ -142,7 +210,7 @@ const App: React.FC = () => {
         currentChunkIndex: 0
       }));
 
-      addLog(`Blueprint workspace ready. ${chunks.length} functional modules identified.`, 'info');
+      addLog(`Migration space ready. ${chunks.length} functional modules identified.`, 'info');
     } catch (error) {
       addLog(`Analysis failed: ${error}`, 'error');
       setMigrationState(prev => ({ ...prev, status: MigrationStatus.FAILED }));
@@ -173,6 +241,7 @@ const App: React.FC = () => {
           ...chunk,
           pythonSource: result.pythonSource,
           businessRules: result.businessRules,
+          copybookStructure: result.copybookStructure,
           unitTest: testResult.testCode,
           coverage: testResult.coverageEstimate,
           status: 'DONE'
@@ -409,39 +478,38 @@ const App: React.FC = () => {
             <div className="md:col-span-8 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
               {selectedChunk ? (
                 <>
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                    <div className="flex flex-1 overflow-hidden">
-                      <div className="flex items-center space-x-2 bg-white px-2 py-1 rounded-lg border border-slate-200 mr-4 shadow-sm">
-                        <button 
-                          onClick={() => setViewMode('functional')}
-                          className={`flex items-center space-x-2 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'functional' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                        >
-                          <BookOpen className="w-3 h-3" />
-                          <span>Functional Blueprint</span>
-                        </button>
-                        <button 
-                          onClick={() => setViewMode('technical')}
-                          className={`flex items-center space-x-2 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'technical' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                        >
-                          <Cpu className="w-3 h-3" />
-                          <span>Modern implementation</span>
-                        </button>
-                        <button 
-                          onClick={() => setViewMode('validation')}
-                          className={`flex items-center space-x-2 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'validation' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                        >
-                          <FlaskConical className="w-3 h-3" />
-                          <span>Behavioral Tests</span>
-                        </button>
-                      </div>
+                  <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50 space-x-4 overflow-x-auto no-scrollbar">
+                    <div className="flex items-center space-x-1.5 bg-white px-1.5 py-1 rounded-lg border border-slate-200 shadow-sm flex-shrink-0">
+                      <button 
+                        onClick={() => setViewMode('functional')}
+                        className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'functional' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        <BookOpen className="w-3 h-3" />
+                        <span className="whitespace-nowrap">Functional Blueprint</span>
+                      </button>
+                      <button 
+                        onClick={() => setViewMode('technical')}
+                        className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'technical' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        <Cpu className="w-3 h-3" />
+                        <span className="whitespace-nowrap">Modern implementation</span>
+                      </button>
+                      <button 
+                        onClick={() => setViewMode('validation')}
+                        className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'validation' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                      >
+                        <FlaskConical className="w-3 h-3" />
+                        <span className="whitespace-nowrap">Behavioral Tests</span>
+                      </button>
                     </div>
                     {selectedChunk.status === 'DONE' && (
                       <button 
                         onClick={() => handleExport(selectedChunk)}
-                        className="flex items-center space-x-2 text-xs bg-slate-800 text-white px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-md"
+                        className="flex items-center space-x-2 text-[10px] font-bold bg-slate-800 text-white px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-md flex-shrink-0"
                       >
-                        <Download className="w-3 h-3 export-btn" />
-                        <span>System Docs</span>
+                        <Download className="w-3 h-3" />
+                        <span className="hidden xl:inline whitespace-nowrap">Export Documentation</span>
+                        <span className="xl:hidden whitespace-nowrap">Export</span>
                       </button>
                     )}
                   </div>
@@ -457,14 +525,68 @@ const App: React.FC = () => {
                           <div className="flex items-center space-x-3">
                              <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><Binary className="w-3 h-3"/> <span>EBCDIC AWARE</span></span>
                              <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><HardDrive className="w-3 h-3"/> <span>VSAM RESOLVED</span></span>
+                             <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-500"><ShieldAlert className="w-3 h-3"/> <span>ERROR RESILIENT</span></span>
                           </div>
                         </div>
+
                         {selectedChunk.businessRules ? (
-                          <div className="prose prose-indigo max-w-none">
-                            <div className="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed bg-slate-50/50 p-6 rounded-xl border border-slate-100 shadow-inner">
-                              {selectedChunk.businessRules}
+                          <div className="space-y-8">
+                            <div className="prose prose-indigo max-w-none">
+                              <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-widest">Core Business Requirements</label>
+                              <div className="text-slate-700 text-sm whitespace-pre-wrap leading-relaxed bg-slate-50/50 p-6 rounded-xl border border-slate-100 shadow-inner">
+                                {selectedChunk.businessRules}
+                              </div>
                             </div>
-                            <div className="mt-8 grid grid-cols-2 gap-4">
+
+                            {selectedChunk.copybookStructure && selectedChunk.copybookStructure.length > 0 && (
+                              <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2 text-indigo-500">
+                                    <Table className="w-4 h-4" />
+                                    <label className="text-[10px] font-black uppercase tracking-widest">Mainframe Data Mapping (Copybook Structures)</label>
+                                  </div>
+                                  <div className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full uppercase">
+                                    {selectedChunk.copybookStructure.length} Fields Isolated
+                                  </div>
+                                </div>
+                                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                  <table className="w-full text-left border-collapse bg-white">
+                                    <thead className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                                      <tr>
+                                        <th className="px-4 py-3 border-b border-slate-100">Legacy COBOL Field</th>
+                                        <th className="px-4 py-3 border-b border-slate-100">Python Mapping</th>
+                                        <th className="px-4 py-3 border-b border-slate-100">Logic Definition</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="text-xs">
+                                      {selectedChunk.copybookStructure.map((field, i) => (
+                                        <tr key={i} className="hover:bg-slate-50/50 transition-colors group">
+                                          <td className="px-4 py-3 border-b border-slate-50 font-mono text-slate-700 font-medium">
+                                            {field.originalField}
+                                          </td>
+                                          <td className="px-4 py-3 border-b border-slate-50">
+                                            <div className="flex items-center space-x-2">
+                                              <Link2 className="w-3 h-3 text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                              <code className="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                                {field.pythonMapping}
+                                              </code>
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-3 border-b border-slate-50 text-slate-500">
+                                            <div className="flex flex-col">
+                                              <span className="font-bold text-slate-700 text-[10px]">{field.dataType}</span>
+                                              <span className="text-[10px] leading-tight mt-0.5">{field.description}</span>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-4">
                                <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
                                   <p className="text-[10px] font-bold text-emerald-600 uppercase mb-2">Mainframe Artifact Mapping</p>
                                   <ul className="text-[11px] text-emerald-800 space-y-1">
@@ -472,11 +594,11 @@ const App: React.FC = () => {
                                     <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-emerald-400 rounded-full"></div><span>Copybook record structures virtualized as Pydantic models.</span></li>
                                   </ul>
                                </div>
-                               <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100">
-                                  <p className="text-[10px] font-bold text-indigo-600 uppercase mb-2">Storage Decoupling</p>
-                                  <ul className="text-[11px] text-indigo-800 space-y-1">
-                                    <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-indigo-400 rounded-full"></div><span>VSAM Indexed-Sequential logic mapped to Repository patterns.</span></li>
-                                    <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-indigo-400 rounded-full"></div><span>FD Section extracted for clean-sheet DB schema design.</span></li>
+                               <div className="bg-rose-50 p-4 rounded-xl border border-rose-100">
+                                  <p className="text-[10px] font-bold text-rose-600 uppercase mb-2">Resilience Abstraction</p>
+                                  <ul className="text-[11px] text-rose-800 space-y-1">
+                                    <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-rose-400 rounded-full"></div><span>EBCDIC decoding failures handled via custom fallbacks.</span></li>
+                                    <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-rose-400 rounded-full"></div><span>I/O interruptions protected by robust exception bubbling.</span></li>
                                   </ul>
                                </div>
                             </div>
@@ -496,17 +618,20 @@ const App: React.FC = () => {
                             <div>
                               <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Legacy Code (EBCDIC/Copybook)</label>
                               <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 h-96 overflow-auto shadow-inner">
-                                <pre className="code-font text-[11px] text-slate-500 leading-relaxed">
-                                  {selectedChunk.cobolSource}
-                                </pre>
+                                <ProgressiveCodeBlock 
+                                  code={selectedChunk.cobolSource} 
+                                  className="code-font text-[11px] text-slate-500 leading-relaxed" 
+                                />
                               </div>
                             </div>
                             <div>
-                              <label className="text-[9px] font-bold text-indigo-400 uppercase mb-1 block">Clean Python implementation</label>
+                              <label className="text-[9px] font-bold text-indigo-400 uppercase mb-1 block">Clean Python with Error Resilience</label>
                               <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 h-96 overflow-auto shadow-xl">
-                                <pre className="code-font text-[11px] text-indigo-200 leading-relaxed whitespace-pre-wrap">
-                                  {selectedChunk.pythonSource || '# Reconstructing logic architecture...'}
-                                </pre>
+                                <ProgressiveCodeBlock 
+                                  code={selectedChunk.pythonSource} 
+                                  placeholder="# Reconstructing logic architecture..."
+                                  className="code-font text-[11px] text-indigo-200 leading-relaxed whitespace-pre-wrap" 
+                                />
                               </div>
                             </div>
                          </div>
@@ -529,9 +654,10 @@ const App: React.FC = () => {
                         </div>
                         {selectedChunk.unitTest ? (
                           <div className="bg-slate-900 border border-emerald-900/30 rounded-xl p-5 shadow-2xl relative">
-                            <pre className="code-font text-[11px] text-emerald-400/90 leading-relaxed whitespace-pre-wrap overflow-x-auto">
-                              {selectedChunk.unitTest}
-                            </pre>
+                            <ProgressiveCodeBlock 
+                              code={selectedChunk.unitTest} 
+                              className="code-font text-[11px] text-emerald-400/90 leading-relaxed whitespace-pre-wrap overflow-x-auto" 
+                            />
                           </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center py-20 text-slate-300">
@@ -547,8 +673,8 @@ const App: React.FC = () => {
                            </div>
                            <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
                              <CheckCircle className="w-4 h-4 text-emerald-500 mb-2" />
-                             <h5 className="text-[10px] font-black text-slate-400 uppercase">I/O Virtualization</h5>
-                             <p className="text-[11px] text-slate-600">VSAM file calls mocked to test business logic isolation.</p>
+                             <h5 className="text-[10px] font-black text-slate-400 uppercase">Resilience Testing</h5>
+                             <p className="text-[11px] text-slate-600">Negative tests for EBCDIC corruption and I/O failures.</p>
                            </div>
                            <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
                              <CheckCircle className="w-4 h-4 text-emerald-500 mb-2" />
