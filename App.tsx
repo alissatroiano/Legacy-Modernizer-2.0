@@ -440,8 +440,8 @@ const App: React.FC = () => {
                         onClick={() => handleExport(selectedChunk)}
                         className="flex items-center space-x-2 text-xs bg-slate-800 text-white px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-md"
                       >
-                        <Download className="w-3 h-3" />
-                        <span>Export System Documentation</span>
+                        <Download className="w-3 h-3 export-btn" />
+                        <span>System Docs</span>
                       </button>
                     )}
                   </div>
