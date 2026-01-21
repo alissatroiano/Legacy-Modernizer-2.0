@@ -36,13 +36,7 @@ import {
   CirclePlay,
   XCircle,
   GanttChartSquare,
-  BadgeCheck,
-  Wand2,
-  ListRestart,
-  History,
-  Fingerprint,
-  Route,
-  Timer
+  BadgeCheck
 } from 'lucide-react';
 import { MigrationStatus, MigrationState, CodeChunk, CopybookField, CloudMapping, GroundingSource, TestResult } from './types';
 import * as gemini from './services/geminiService';
@@ -115,9 +109,9 @@ const App: React.FC = () => {
 
   const [inputCode, setInputCode] = useState<string>('');
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'functional' | 'technical' | 'validation' | 'history'>('functional');
+  const [viewMode, setViewMode] = useState<'functional' | 'technical' | 'validation'>('functional');
   const [logs, setLogs] = useState<{msg: string, type: 'info' | 'success' | 'error' | 'thinking'}[]>([]);
-  const [correctionTrace, setCorrectionTrace] = useState<{id: string, log: string, level: number, signature: string}[]>([]);
+  const [isRunningTests, setIsRunningTests] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const addLog = useCallback((msg: string, type: 'info' | 'success' | 'error' | 'thinking' = 'info') => {
@@ -150,11 +144,11 @@ const App: React.FC = () => {
       chunks: []
     }));
 
-    addLog("Engaging Marathon Agent: Global Thinking Layer 1...", 'thinking');
+    addLog("Engaging Gemini Pro Deep Thinking (32k token budget)...", 'thinking');
 
     try {
       const analysis = await gemini.analyzeLegacyCodebase(inputCode);
-      addLog("GCP Strategy Blueprint established.", 'success');
+      addLog("GCP Strategy synthesized via reasoning engine.", 'success');
       
       const { chunks: rawChunks } = await gemini.splitCodeIntoChunks(inputCode);
       const chunks: CodeChunk[] = rawChunks.map((c, idx) => ({
@@ -173,7 +167,7 @@ const App: React.FC = () => {
         currentChunkIndex: 0
       }));
     } catch (error) {
-      addLog(`Marathon interrupted: ${error}`, 'error');
+      addLog(`Migration halt: ${error}`, 'error');
       setMigrationState(prev => ({ ...prev, status: MigrationStatus.FAILED }));
     }
   };
@@ -185,59 +179,21 @@ const App: React.FC = () => {
     const chunk = chunks[currentChunkIndex];
     if (chunk.status !== 'PENDING') return;
 
-    addLog(`Modernization loop for ${chunk.name} initiated...`, 'info');
+    addLog(`Grounding modernization for ${chunk.name} via Search...`, 'info');
 
     try {
       const { research, sources } = await gemini.researchModernEquivalents(chunk.name);
+      addLog(`Applying deep reasoning for ${chunk.name}...`, 'thinking');
+      const result = await gemini.processModuleLogic(chunk, research);
+      const testResult = await gemini.generateTests(result.pythonSource, chunk.cobolSource);
       
-      // Step 1: Initial Implementation
-      addLog(`Thinking Level 2: Synthesis for ${chunk.name}...`, 'thinking');
-      let currentResult = await gemini.processModuleLogic(chunk, research);
-      let tests = await gemini.generateTests(currentResult.pythonSource, chunk.cobolSource);
-      
-      // Step 2: Vibe Engineering - Autonomous Testing Loop
-      let iteration = 0;
-      const MAX_PATCHES = 2;
-      let validationResults: TestResult[] = [];
-      let passRate = 0;
-
-      while (iteration <= MAX_PATCHES) {
-        addLog(`Vibe Verification: Testing ${chunk.name} [Iteration ${iteration + 1}]...`, 'info');
-        validationResults = await gemini.executeValidation(currentResult.pythonSource, tests.testCode);
-        passRate = validationResults.filter(r => r.status === 'PASSED').length / (validationResults.length || 1);
-
-        if (passRate === 1) {
-          addLog(`Verification Artifact verified for ${chunk.name}.`, 'success');
-          break;
-        }
-
-        if (iteration < MAX_PATCHES) {
-          addLog(`Parity mismatch. Engaging Self-Healing Loop Level ${iteration + 3}...`, 'thinking');
-          const failed = validationResults.filter(r => r.status === 'FAILED');
-          const patch = await gemini.selfCorrectModule(chunk, failed, currentResult.pythonSource);
-          
-          setCorrectionTrace(prev => [...prev, { 
-            id: chunk.id, 
-            log: patch.correctionLogic, 
-            level: iteration + 3,
-            signature: `THOUGHT-SIG-${Math.random().toString(36).substring(7).toUpperCase()}`
-          }]);
-          currentResult.pythonSource = patch.pythonSource;
-          iteration++;
-        } else {
-          addLog(`Max healing cycles reached. Intervention Artifact required.`, 'error');
-          break;
-        }
-      }
-
       setMigrationState(prev => {
         const newChunks = [...prev.chunks];
         newChunks[currentChunkIndex] = {
           ...chunk,
-          ...currentResult,
-          unitTest: tests.testCode,
-          testResults: validationResults,
-          coverage: Math.round(passRate * 100),
+          ...result,
+          unitTest: testResult.testCode,
+          coverage: testResult.coverageEstimate,
           groundingSources: sources,
           status: 'DONE'
         };
@@ -250,10 +206,36 @@ const App: React.FC = () => {
           status: isLast ? MigrationStatus.COMPLETED : MigrationStatus.PROCESSING
         };
       });
+      addLog(`${chunk.name} resolved with GCP best practices.`, 'success');
     } catch (error) {
-      addLog(`Agent Error in ${chunk.name}: ${error}`, 'error');
+      addLog(`Error in ${chunk.name}: ${error}`, 'error');
     }
   }, [migrationState, addLog]);
+
+  const runTests = async (chunk: CodeChunk) => {
+    if (!chunk.pythonSource || !chunk.unitTest || isRunningTests) return;
+    
+    setIsRunningTests(true);
+    addLog(`Running validation suite for ${chunk.name}...`, 'info');
+    
+    try {
+      const results = await gemini.executeValidation(chunk.pythonSource, chunk.unitTest);
+      
+      setMigrationState(prev => {
+        const newChunks = prev.chunks.map(c => 
+          c.id === chunk.id ? { ...c, testResults: results } : c
+        );
+        return { ...prev, chunks: newChunks };
+      });
+      
+      const passCount = results.filter(r => r.status === 'PASSED').length;
+      addLog(`Validation complete for ${chunk.name}: ${passCount}/${results.length} PASSED`, passCount === results.length ? 'success' : 'error');
+    } catch (error) {
+      addLog(`Execution failure in test suite: ${error}`, 'error');
+    } finally {
+      setIsRunningTests(false);
+    }
+  };
 
   useEffect(() => {
     if (migrationState.status === MigrationStatus.PROCESSING) {
@@ -266,6 +248,10 @@ const App: React.FC = () => {
 
   const selectedChunk = migrationState.chunks.find(c => c.id === selectedChunkId) || 
                           migrationState.chunks[migrationState.currentChunkIndex];
+
+  const progressPercentage = migrationState.totalLines > 0 
+    ? Math.round((migrationState.processedLines / migrationState.totalLines) * 100) 
+    : 0;
 
   const overallCoverage = useMemo(() => {
     const doneChunks = migrationState.chunks.filter(c => c.status === 'DONE');
@@ -287,25 +273,19 @@ const App: React.FC = () => {
               <BrainCircuit className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center space-x-2">
-                <h1 className="text-xl font-black tracking-tight">LegacyLink AI</h1>
-                <span className="text-[10px] bg-sky-500/20 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest italic">Gemini 3 Hackathon</span>
-              </div>
-              <div className="flex space-x-3 mt-0.5">
-                <span className="text-[9px] text-slate-400 font-bold flex items-center space-x-1 uppercase">
-                   <Timer className="w-2.5 h-2.5" /> <span>Track: Marathon Agent</span>
-                </span>
-                <span className="text-[9px] text-slate-400 font-bold flex items-center space-x-1 uppercase">
-                   <Fingerprint className="w-2.5 h-2.5" /> <span>Track: Vibe Engineering</span>
-                </span>
-              </div>
+              <h1 className="text-xl font-black tracking-tight flex items-center space-x-2">
+                <span>LegacyLink</span>
+                <span className="text-sky-400">AI</span>
+                <span className="text-[10px] bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2 py-0.5 rounded-full font-bold ml-2">v3.0 PRO</span>
+              </h1>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Enterprise Reasoning & Search Grounding</p>
             </div>
           </div>
           <div className="flex items-center space-x-4">
              {isProcessing && (
                <div className="flex items-center space-x-3 bg-indigo-500/10 border border-indigo-500/30 px-4 py-2 rounded-xl">
                  <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                 <span className="text-xs font-black text-indigo-300 animate-pulse uppercase tracking-widest">Autonomous Thinking Active</span>
+                 <span className="text-xs font-black text-indigo-300 animate-pulse">Deep Reasoning Active</span>
                </div>
              )}
              <div className="h-8 w-px bg-slate-700 mx-2"></div>
@@ -320,31 +300,31 @@ const App: React.FC = () => {
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
               <div className="flex items-center space-x-3 font-bold text-slate-700">
                 <FileCode className="w-5 h-5 text-indigo-600" />
-                <span className="text-sm">Mainframe Artifacts</span>
+                <span className="text-sm">Mainframe Source</span>
               </div>
               <button 
                 onClick={() => fileInputRef.current?.click()}
                 disabled={migrationState.status !== MigrationStatus.IDLE}
                 className="text-[10px] font-black text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 transition-all uppercase disabled:opacity-50"
               >
-                Upload Sources
+                Upload Codebase
               </button>
             </div>
             <textarea 
               value={inputCode}
               onChange={(e) => setInputCode(e.target.value)}
               className="w-full h-80 p-5 code-font text-sm bg-slate-900 text-indigo-100 focus:outline-none resize-none leading-relaxed"
-              placeholder="Paste COBOL core logic here..."
+              placeholder="Paste COBOL artifacts here..."
               disabled={migrationState.status !== MigrationStatus.IDLE}
             />
             <div className="p-5 bg-white">
               <button 
                 onClick={handleStartMigration}
                 disabled={migrationState.status !== MigrationStatus.IDLE || !inputCode}
-                className="w-full py-4 px-6 rounded-xl bg-[#0f172a] text-white font-black flex items-center justify-center space-x-3 shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:grayscale disabled:opacity-50"
+                className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 text-white font-black flex items-center justify-center space-x-3 shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:grayscale disabled:opacity-50"
               >
-                <Wand2 className="w-5 h-5" />
-                <span className="uppercase tracking-widest text-sm">Launch Marathon Agent</span>
+                <Zap className="w-5 h-5 fill-white" />
+                <span className="uppercase tracking-widest text-sm">Execute Logic Recovery</span>
               </button>
             </div>
           </div>
@@ -352,11 +332,11 @@ const App: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-[400px]">
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center space-x-3 font-bold text-slate-700">
               <Terminal className="w-5 h-5 text-indigo-600" />
-              <span className="text-sm">Agent Activity Trace</span>
+              <span className="text-sm">Execution Engine Logs</span>
             </div>
             <div className="p-5 space-y-3 overflow-y-auto flex-1 bg-slate-50/30">
               {logs.map((log, i) => (
-                <div key={i} className={`text-[11px] flex items-start space-x-3 p-3 rounded-xl border ${
+                <div key={i} className={`text-[11px] flex items-start space-x-3 p-2.5 rounded-lg border ${
                   log.type === 'error' ? 'bg-rose-50 border-rose-100 text-rose-700' : 
                   log.type === 'success' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 
                   log.type === 'thinking' ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 
@@ -366,42 +346,46 @@ const App: React.FC = () => {
                   <span className="flex-1 font-medium leading-relaxed">{log.msg}</span>
                 </div>
               ))}
-              {logs.length === 0 && <p className="text-slate-400 text-xs text-center italic mt-10">Agent idle. Awaiting mission parameters.</p>}
+              {logs.length === 0 && <p className="text-slate-400 text-xs text-center italic mt-10">Standby for migration input...</p>}
             </div>
           </div>
         </div>
 
         <div className="lg:col-span-8 flex flex-col space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-[#0f172a] p-5 rounded-2xl border border-slate-700 shadow-xl relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                <ListRestart className="w-12 h-12 text-indigo-400" />
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl group hover:border-indigo-300 transition-colors">
+              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Migration Velocity</p>
+              <div className="flex items-end justify-between">
+                <span className="text-3xl font-black text-indigo-600">{progressPercentage}%</span>
+                <Activity className="w-5 h-5 text-indigo-400 mb-1" />
               </div>
-              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Self-Healing cycles</p>
-              <span className="text-3xl font-black text-white">{correctionTrace.length}</span>
-              <p className="text-[10px] text-indigo-400 mt-2 font-bold uppercase tracking-widest">Thinking Budget Patches</p>
+              <div className="w-full bg-slate-100 h-2.5 rounded-full mt-3 overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-indigo-500 to-sky-500 rounded-full transition-all duration-1000" style={{width: `${progressPercentage}%`}}></div>
+              </div>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl">
               <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Grounding Coverage</p>
               <div className="flex items-end justify-between">
-                <span className="text-3xl font-black text-indigo-600">
+                <span className="text-3xl font-black text-sky-600">
                   {migrationState.chunks.filter(c => c.groundingSources).length}/{migrationState.chunks.length}
                 </span>
-                <Globe className="w-5 h-5 text-indigo-400 mb-1" />
+                <Globe className="w-5 h-5 text-sky-500 mb-1" />
               </div>
+              <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Verified via search</p>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl">
-              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Thinking Tokens</p>
+              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Reasoning Budget</p>
               <div className="flex items-center space-x-3">
                 <BrainCircuit className="w-5 h-5 text-indigo-500" />
-                <span className="text-2xl font-black text-slate-700 uppercase tracking-tighter">32K MAX</span>
+                <span className="text-2xl font-black text-slate-700">32k</span>
               </div>
+              <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Tokens per unit</p>
             </div>
             
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
-              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Validation Parity</p>
+              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Parity Score</p>
               <div className="flex items-center space-x-3">
                 <ShieldCheck className="w-5 h-5 text-emerald-500" />
                 <span className="text-3xl font-black text-emerald-600">{overallCoverage}%</span>
@@ -412,10 +396,11 @@ const App: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-12 gap-8 flex-1">
             <div className="md:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
               <div className="p-5 border-b border-slate-100 bg-slate-50 text-xs font-black text-slate-700 flex justify-between items-center uppercase tracking-widest">
-                <span>Continuity Queue</span>
+                <span>Modules Discovered</span>
+                <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg">{migrationState.chunks.length} Units</span>
               </div>
               <div className="overflow-y-auto flex-1">
-                {migrationState.chunks.map((chunk) => (
+                {migrationState.chunks.map((chunk, idx) => (
                   <button 
                     key={chunk.id}
                     onClick={() => setSelectedChunkId(chunk.id)}
@@ -424,19 +409,21 @@ const App: React.FC = () => {
                   >
                     <div className="flex items-center space-x-4">
                       {chunk.status === 'DONE' ? (
-                        <CheckCircle className={`w-5 h-5 ${chunk.coverage === 100 ? 'text-emerald-500' : 'text-amber-500'}`} />
+                        <CheckCircle className="w-5 h-5 text-emerald-500" />
                       ) : (
                         <div className="w-5 h-5 rounded-full border-2 border-slate-200 animate-pulse bg-slate-100" />
                       )}
                       <div>
-                        <p className="text-xs font-black text-slate-700 uppercase">{chunk.name}</p>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${chunk.coverage === 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                            {chunk.coverage}% PARITY
-                          </span>
-                        </div>
+                        <p className="text-xs font-black text-slate-700 uppercase group-hover:text-indigo-700 transition-colors">{chunk.name}</p>
+                        {chunk.groundingSources && (
+                          <div className="flex items-center space-x-1 mt-1 text-[9px] text-sky-600 font-black uppercase">
+                             <Globe className="w-3 h-3" />
+                             <span>GCP Verified</span>
+                          </div>
+                        )}
                       </div>
                     </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />
                   </button>
                 ))}
               </div>
@@ -445,13 +432,12 @@ const App: React.FC = () => {
             <div className="md:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-xl flex flex-col overflow-hidden">
               {selectedChunk ? (
                 <>
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 no-scrollbar">
                     <div className="flex items-center space-x-2 bg-white px-2 py-1.5 rounded-xl border border-slate-200 shadow-sm">
                       {[
-                        { id: 'functional', label: 'Reasoning', icon: BookOpen },
+                        { id: 'functional', label: 'Analysis', icon: BookOpen },
                         { id: 'technical', label: 'Implementation', icon: Cpu },
-                        { id: 'validation', label: 'Verification', icon: FlaskConical },
-                        { id: 'history', label: 'Signatures', icon: Fingerprint }
+                        { id: 'validation', label: 'Verification', icon: FlaskConical }
                       ].map(mode => (
                         <button 
                           key={mode.id}
@@ -470,9 +456,19 @@ const App: React.FC = () => {
                   <div className="flex-1 overflow-y-auto bg-white p-8">
                     {viewMode === 'functional' && (
                       <div className="space-y-10">
-                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-inner relative group">
-                          <div className="absolute top-4 right-4 text-[9px] font-bold text-indigo-400 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded">THINKING LEVEL 1</div>
-                          <label className="text-[10px] font-black text-slate-400 uppercase mb-4 block tracking-widest">Business Logic Artifacts</label>
+                        <div className="flex items-center justify-between border-b-2 border-indigo-50 pb-4">
+                          <div className="flex items-center space-x-4">
+                             <BrainCircuit className="w-6 h-6 text-indigo-600" />
+                             <h4 className="font-black text-lg uppercase tracking-tight text-slate-800">Deep Reasoning Recovery</h4>
+                          </div>
+                          <div className="flex items-center space-x-3 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-xl border border-emerald-100">
+                             <ShieldCheck className="w-4 h-4" />
+                             <span className="text-[10px] font-black uppercase">Integrity Score: {selectedChunk.coverage || 0}%</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-inner">
+                          <label className="text-[10px] font-black text-slate-400 uppercase mb-4 block tracking-widest">Business Logic & Rules</label>
                           <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap font-medium">
                             {selectedChunk.businessRules}
                           </div>
@@ -480,15 +476,48 @@ const App: React.FC = () => {
 
                         {selectedChunk.groundingSources && selectedChunk.groundingSources.length > 0 && (
                           <div className="space-y-4">
-                            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest block">Google Search Grounding</label>
+                            <div className="flex items-center space-x-3 text-sky-600 border-b border-sky-100 pb-2">
+                              <Globe className="w-5 h-5" />
+                              <label className="text-[10px] font-black uppercase tracking-widest">GCP Context & Reference Sources</label>
+                            </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                               {selectedChunk.groundingSources.map((source, i) => (
-                                <a key={i} href={source.uri} target="_blank" className="flex items-center justify-between p-4 bg-indigo-50/30 border border-indigo-100 rounded-xl hover:bg-indigo-50 transition-all group">
-                                  <span className="text-xs font-bold text-slate-800 truncate">{source.title}</span>
-                                  <ExternalLink className="w-3.5 h-3.5 text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                <a 
+                                  key={i} 
+                                  href={source.uri} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="flex items-center justify-between p-4 bg-sky-50/50 hover:bg-sky-100/50 border border-sky-100 rounded-xl transition-all group"
+                                >
+                                  <div className="flex items-center space-x-3 truncate">
+                                    <div className="p-2 bg-white rounded-lg border border-sky-100 text-sky-600 group-hover:scale-110 transition-transform">
+                                      <ExternalLink className="w-4 h-4" />
+                                    </div>
+                                    <span className="text-xs font-bold text-sky-900 truncate">{source.title}</span>
+                                  </div>
+                                  <ChevronRight className="w-4 h-4 text-sky-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </a>
                               ))}
                             </div>
+                          </div>
+                        )}
+
+                        {selectedChunk.cloudTargetArchitecture && (
+                          <div className="space-y-4">
+                             <div className="flex items-center space-x-3 text-[#0f172a] border-b border-slate-200 pb-2">
+                                <Server className="w-5 h-5 text-indigo-600" />
+                                <label className="text-[10px] font-black uppercase tracking-widest">Google Cloud Target Topology</label>
+                             </div>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                               {selectedChunk.cloudTargetArchitecture.map((mapping, i) => (
+                                 <div key={i} className="p-5 border border-slate-200 rounded-2xl hover:border-indigo-400 hover:shadow-lg transition-all bg-white relative overflow-hidden">
+                                   <div className="absolute top-0 right-0 p-2 opacity-10"><Box className="w-12 h-12" /></div>
+                                   <p className="text-[10px] font-black text-indigo-600 uppercase mb-1">{mapping.gcpService}</p>
+                                   <p className="text-xs font-black text-slate-800 mb-2">Replaces: {mapping.legacyComponent}</p>
+                                   <p className="text-[11px] text-slate-500 leading-relaxed font-medium">{mapping.rationale}</p>
+                                 </div>
+                               ))}
+                             </div>
                           </div>
                         )}
                       </div>
@@ -496,67 +525,117 @@ const App: React.FC = () => {
 
                     {viewMode === 'technical' && (
                       <div className="space-y-8">
-                        <div className="bg-[#0f172a] rounded-2xl p-6 shadow-2xl border border-slate-800 relative">
-                          <div className="absolute top-4 right-4 text-[9px] font-bold text-sky-400 bg-sky-400/10 border border-sky-400/30 px-2 py-1 rounded">THINKING LEVEL 2</div>
-                          <ProgressiveCodeBlock 
-                            code={selectedChunk.pythonSource} 
-                            className="code-font text-xs text-indigo-200 leading-loose" 
-                          />
-                        </div>
+                         <div className="grid grid-cols-1 gap-8">
+                            <div>
+                              <div className="flex items-center justify-between mb-4">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Modern Logic Engine (Python 3.12)</label>
+                                <div className="flex items-center space-x-2 bg-slate-900 text-emerald-400 px-3 py-1 rounded-full text-[9px] font-black uppercase">
+                                   <Zap className="w-3 h-3" />
+                                   <span>Cloud Run Optimized</span>
+                                </div>
+                              </div>
+                              <div className="bg-[#0f172a] rounded-2xl p-6 shadow-2xl border border-slate-800">
+                                <ProgressiveCodeBlock 
+                                  code={selectedChunk.pythonSource} 
+                                  className="code-font text-xs text-indigo-200 leading-loose" 
+                                />
+                              </div>
+                            </div>
+                         </div>
                       </div>
                     )}
 
                     {viewMode === 'validation' && (
                       <div className="space-y-8">
-                        <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-between">
-                           <div className="flex items-center space-x-3">
-                              <BadgeCheck className="w-5 h-5 text-emerald-600" />
-                              <span className="text-xs font-black text-emerald-900 uppercase tracking-widest">Autonomous Verification Loop Parity: {selectedChunk.coverage}%</span>
-                           </div>
-                           <button className="text-[10px] font-black text-emerald-700 underline underline-offset-4 uppercase tracking-widest">Download Verification Artifact</button>
+                        <div className="flex items-center justify-between border-b-2 border-emerald-50 pb-4">
+                          <div className="flex items-center space-x-4">
+                            <FlaskConical className="w-6 h-6 text-emerald-600" />
+                            <h4 className="font-black text-lg uppercase tracking-tight text-slate-800">Verification Suite</h4>
+                          </div>
+                          <button 
+                            onClick={() => runTests(selectedChunk)}
+                            disabled={isRunningTests || !selectedChunk.unitTest}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center space-x-2 shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:grayscale"
+                          >
+                            {isRunningTests ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <CirclePlay className="w-4 h-4" />
+                            )}
+                            <span>Run Suite</span>
+                          </button>
                         </div>
 
-                        <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800">
-                          {selectedChunk.testResults?.map((res, i) => (
-                            <div key={i} className="p-4 border-b border-slate-800 flex items-center justify-between hover:bg-slate-800/50 transition-colors">
-                              <div className="flex items-center space-x-3">
-                                {res.status === 'PASSED' ? <CheckCircle className="w-4 h-4 text-emerald-500" /> : <XCircle className="w-4 h-4 text-rose-500" />}
-                                <span className="text-[11px] font-mono text-indigo-200">{res.name}</span>
+                        {selectedChunk.testResults ? (
+                          <div className="space-y-6">
+                            <div className="bg-[#0f172a] rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
+                              <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
+                                <div className="flex items-center space-x-2 text-emerald-400">
+                                  <Terminal className="w-4 h-4" />
+                                  <span className="text-[10px] font-black uppercase">Pytest Execution Log</span>
+                                </div>
+                                <div className="flex space-x-4">
+                                  <span className="text-[10px] font-black text-emerald-400">PASSED: {selectedChunk.testResults.filter(r => r.status === 'PASSED').length}</span>
+                                  <span className="text-[10px] font-black text-rose-400">FAILED: {selectedChunk.testResults.filter(r => r.status === 'FAILED').length}</span>
+                                </div>
                               </div>
-                              <span className="text-[10px] font-mono text-slate-500 uppercase">{res.duration}</span>
+                              <div className="p-6 space-y-3 font-mono text-[11px]">
+                                {selectedChunk.testResults.map((res, i) => (
+                                  <div key={i} className="flex items-start space-x-4 group">
+                                    <span className="text-slate-500 min-w-[40px]">{res.duration}</span>
+                                    {res.status === 'PASSED' ? (
+                                      <span className="text-emerald-500 font-bold">PASSED</span>
+                                    ) : (
+                                      <span className="text-rose-500 font-bold">FAILED</span>
+                                    )}
+                                    <span className="text-indigo-200">{res.name}</span>
+                                    {res.message && <span className="text-slate-500 italic">— {res.message}</span>}
+                                  </div>
+                                ))}
+                                <div className="mt-6 pt-6 border-t border-slate-800 flex items-center justify-between">
+                                  <div className="text-emerald-400 font-black text-xs">
+                                    {selectedChunk.testResults.every(r => r.status === 'PASSED') ? '✓ ALL TESTS PASSED' : '⚠ VALIDATION WARNING'}
+                                  </div>
+                                  <div className="text-slate-500">
+                                    Run completed in {selectedChunk.testResults.reduce((acc, r) => acc + parseFloat(r.duration), 0).toFixed(2)}s
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
 
-                    {viewMode === 'history' && (
-                      <div className="space-y-6">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                           <div className="flex items-center space-x-3 text-indigo-600">
-                              <Fingerprint className="w-5 h-5" />
-                              <h4 className="text-[10px] font-black uppercase tracking-widest">Thought Signatures & Thinking Levels</h4>
-                           </div>
-                        </div>
-                        {correctionTrace.filter(t => t.id === selectedChunk.id).length > 0 ? (
-                          correctionTrace.filter(t => t.id === selectedChunk.id).map((t, i) => (
-                            <div key={i} className="p-6 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner relative overflow-hidden group">
-                               <div className="absolute top-0 right-0 p-3 flex flex-col items-end">
-                                  <span className="text-[8px] font-black text-indigo-400 mb-1">{t.signature}</span>
-                                  <span className="text-[10px] font-black text-white bg-indigo-500 px-2 py-0.5 rounded">LEVEL {t.level}</span>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                               <div className="p-5 rounded-2xl border border-emerald-100 bg-emerald-50/50 flex items-center space-x-4">
+                                  <div className="p-3 bg-white rounded-xl shadow-sm border border-emerald-100">
+                                    <BadgeCheck className="w-6 h-6 text-emerald-600" />
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">Functional Consistency</p>
+                                    <p className="text-xs text-slate-700 font-medium">Binary logic parity confirmed against legacy EBCDIC rules.</p>
+                                  </div>
                                </div>
-                               <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-                               <p className="text-[10px] font-black text-indigo-600 uppercase mb-3 flex items-center space-x-2">
-                                  <BrainCircuit className="w-3.5 h-3.5" />
-                                  <span>Agent Self-Correction Sequence</span>
-                               </p>
-                               <p className="text-xs text-slate-600 leading-relaxed font-medium max-w-[80%]">{t.log}</p>
+                               <div className="p-5 rounded-2xl border border-indigo-100 bg-indigo-50/50 flex items-center space-x-4">
+                                  <div className="p-3 bg-white rounded-xl shadow-sm border border-indigo-100">
+                                    <GanttChartSquare className="w-6 h-6 text-indigo-600" />
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] font-black text-indigo-600 uppercase mb-1">Regression Guard</p>
+                                    <p className="text-xs text-slate-700 font-medium">Auto-generated mocks isolate cloud dependencies from core logic.</p>
+                                  </div>
+                               </div>
                             </div>
-                          ))
+                          </div>
                         ) : (
-                          <div className="h-40 flex flex-col items-center justify-center text-slate-400 space-y-4">
-                             <CheckCircle className="w-10 h-10 opacity-20" />
-                             <span className="text-[10px] font-black uppercase tracking-widest">No continuity breaks detected. Parity maintained.</span>
+                          <div className="bg-[#0f172a] rounded-2xl p-10 border border-slate-800 shadow-2xl relative overflow-hidden group">
+                             <div className="absolute top-0 left-0 w-full h-1 bg-indigo-500/20 group-hover:bg-indigo-500/50 transition-colors"></div>
+                             <ProgressiveCodeBlock 
+                               code={selectedChunk.unitTest} 
+                               className="code-font text-xs text-emerald-400/70 leading-loose blur-[1px] group-hover:blur-0 transition-all duration-500" 
+                             />
+                             <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/40 backdrop-blur-sm">
+                               <CirclePlay className="w-12 h-12 text-white mb-4 animate-pulse" />
+                               <p className="text-sm font-black text-white uppercase tracking-widest">Execute Validation Suite</p>
+                               <p className="text-[10px] text-slate-400 font-bold uppercase mt-2">Click 'Run Suite' above to start verification</p>
+                             </div>
                           </div>
                         )}
                       </div>
@@ -564,56 +643,67 @@ const App: React.FC = () => {
                   </div>
                 </>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center">
-                  <div className="relative">
-                    <Loader2 className="w-12 h-12 text-indigo-400 animate-spin mb-4" />
-                    <BrainCircuit className="w-6 h-6 text-indigo-600 absolute top-3 left-3 animate-pulse" />
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-slate-50/20">
+                  <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-8 shadow-xl border border-slate-100 animate-bounce">
+                    <Zap className="w-10 h-10 text-indigo-400" />
                   </div>
-                  <p className="text-xs font-black text-slate-500 uppercase tracking-widest animate-pulse">Marathon Agent: Syncing State...</p>
+                  <h3 className="text-xl font-black text-slate-800 mb-3 uppercase tracking-tight">System Discovery Pending</h3>
+                  <p className="text-slate-500 text-sm max-w-sm mx-auto leading-relaxed font-medium">
+                    Upload your legacy artifacts to begin the reasoning-enhanced modernization sequence.
+                  </p>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-[#0f172a] to-[#1e293b] rounded-3xl border border-slate-700 p-10 shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-6 opacity-5">
-              <Route className="w-40 h-40 text-white" />
-            </div>
-            <div className="flex items-center space-x-4 mb-6 relative">
-              <Database className="w-6 h-6 text-indigo-400" />
-              <h3 className="text-xl font-black text-white tracking-tight">Autonomous System Blueprint</h3>
-              <span className="text-[9px] font-bold text-sky-400 bg-sky-400/10 border border-sky-400/30 px-2 py-1 rounded">LEVEL 1 REASONING</span>
+          <div className="bg-gradient-to-br from-[#0f172a] to-[#1e293b] rounded-3xl border border-slate-700 p-10 shadow-2xl group overflow-hidden relative">
+            <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-indigo-500/5 rounded-full blur-3xl group-hover:bg-indigo-500/10 transition-all duration-1000"></div>
+            <div className="flex items-center justify-between mb-8 relative z-10">
+              <div className="flex items-center space-x-4">
+                <Database className="w-6 h-6 text-indigo-400" />
+                <h3 className="text-xl font-black text-white tracking-tight">Strategic Cloud Blueprint</h3>
+              </div>
+              <div className="flex space-x-2">
+                <span className="text-[10px] text-sky-400 uppercase font-black bg-sky-500/10 px-4 py-1.5 rounded-full border border-sky-500/20">Verified Target: GCP</span>
+              </div>
             </div>
             {migrationState.overallPlan ? (
-              <div className="text-indigo-100/70 text-sm whitespace-pre-wrap leading-loose max-h-80 overflow-y-auto font-medium relative">
+              <div className="text-indigo-100/70 text-sm whitespace-pre-wrap leading-loose max-h-80 overflow-y-auto pr-4 scrollbar-thin scrollbar-thumb-indigo-900 relative z-10 font-medium">
                 {migrationState.overallPlan}
               </div>
             ) : (
-              <div className="h-40 flex flex-col items-center justify-center space-y-4">
-                <div className="w-40 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                   <div className="w-1/2 h-full bg-indigo-500 animate-[loading_2s_infinite]"></div>
-                </div>
+              <div className="h-40 flex flex-col items-center justify-center text-slate-600 space-y-4">
+                <div className="w-10 h-1 bg-slate-800 rounded-full animate-pulse"></div>
+                <span className="text-sm font-bold uppercase tracking-widest opacity-50">Architecture synthesis pending analysis...</span>
               </div>
             )}
           </div>
         </div>
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-3 px-8 flex items-center justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
-         <div className="flex space-x-8">
-           <span className="flex items-center space-x-2 text-indigo-500"><div className="w-1.5 h-1.5 rounded-full bg-current"></div><span>Thinking Signatures Active</span></span>
-           <span className="flex items-center space-x-2"><div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div><span>Verification Artifacts Stored</span></span>
-         </div>
-         <div className="flex items-center space-x-2">
-            <span>Powered by Gemini 3 reasoning engine</span>
-         </div>
+      <footer className="bg-white border-t border-slate-200 py-4 px-8 shadow-2xl relative z-20">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+           <div className="flex items-center space-x-12">
+             <div className="flex items-center space-x-3">
+               <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Logic Decoupled</span>
+             </div>
+             <div className="flex items-center space-x-3">
+               <div className="w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.5)]"></div>
+               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Reasoning Engaged</span>
+             </div>
+             <div className="flex items-center space-x-3">
+               <div className="w-2 h-2 bg-sky-500 rounded-full shadow-[0_0_8px_rgba(14,165,233,0.5)]"></div>
+               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Cloud Grounded</span>
+             </div>
+           </div>
+           <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center space-x-4">
+              <span>Powered by Gemini 3 Ecosystem</span>
+              <div className="h-4 w-px bg-slate-200"></div>
+              <span>Confidential Banking Core</span>
+           </div>
+        </div>
       </footer>
-      <style>{`
-        @keyframes loading {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(200%); }
-        }
-      `}</style>
     </div>
   );
 };

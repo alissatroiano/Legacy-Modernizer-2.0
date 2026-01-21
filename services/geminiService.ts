@@ -154,53 +154,6 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
   }
 };
 
-/**
- * Autonomous Self-Correction Loop: Patches code based on test failures.
- */
-export const selfCorrectModule = async (
-  chunk: CodeChunk, 
-  failedTests: TestResult[], 
-  currentPython: string
-): Promise<{ pythonSource: string, correctionLogic: string }> => {
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: `
-    The previous Python implementation of ${chunk.name} failed unit tests. 
-    
-    FAILED TESTS:
-    ${JSON.stringify(failedTests, null, 2)}
-    
-    CURRENT IMPLEMENTATION:
-    ${currentPython}
-    
-    ORIGINAL COBOL REFERENCE:
-    ${chunk.cobolSource}
-    
-    TASK: Use your thinking budget to diagnose the regression. Apply a fix to the Python code to ensure all tests pass.
-    Maintain financial precision.
-    `,
-    config: {
-      temperature: 0, // Deterministic for patching
-      thinkingConfig: { thinkingBudget: 32768 },
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          pythonSource: { type: Type.STRING, description: 'The corrected Python source code' },
-          correctionLogic: { type: Type.STRING, description: 'Explanation of the fix' }
-        },
-        required: ['pythonSource', 'correctionLogic']
-      }
-    }
-  });
-
-  try {
-    return JSON.parse(response.text || '{}');
-  } catch (e) {
-    return { pythonSource: currentPython, correctionLogic: "Correction failed to parse." };
-  }
-};
-
 export const generateTests = async (pythonCode: string, cobolReference: string): Promise<{ testCode: string, coverageEstimate: number }> => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
@@ -228,12 +181,20 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
   }
 };
 
+/**
+ * Simulates the execution of the generated Python tests against the implementation.
+ */
 export const executeValidation = async (pythonCode: string, testCode: string): Promise<TestResult[]> => {
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: `Act as a Python Test Executor. Evaluate the following Python implementation against its unit tests.
-    IMPLEMENTATION: ${pythonCode}
-    TESTS: ${testCode}`,
+    IMPLEMENTATION:
+    ${pythonCode}
+    
+    TESTS:
+    ${testCode}
+    
+    Provide a detailed report of which tests pass and which fail. Simulate a realistic 'pytest' run.`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -241,10 +202,10 @@ export const executeValidation = async (pythonCode: string, testCode: string): P
         items: {
           type: Type.OBJECT,
           properties: {
-            name: { type: Type.STRING },
+            name: { type: Type.STRING, description: 'Test function name' },
             status: { type: Type.STRING, enum: ['PASSED', 'FAILED'] },
-            message: { type: Type.STRING },
-            duration: { type: Type.STRING }
+            message: { type: Type.STRING, description: 'Optional error message or description' },
+            duration: { type: Type.STRING, description: 'Execution time e.g. "0.02s"' }
           },
           required: ['name', 'status', 'duration']
         }
