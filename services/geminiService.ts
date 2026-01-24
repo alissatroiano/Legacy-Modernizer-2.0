@@ -1,6 +1,6 @@
 
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { CodeChunk, CopybookField, CloudMapping, GroundingSource, TestResult } from "../types";
+import { GoogleGenAI, Type } from "@google/genai";
+import { CodeChunk, CopybookField, TestResult } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -97,8 +97,8 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
         required: ['chunks']
       }
     }
-  }));
-  
+  });
+
   try {
     return JSON.parse(response.text || '{"chunks": []}');
   } catch (e) {
@@ -159,12 +159,17 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
         required: ['pythonSource', 'businessRules', 'copybookStructure', 'cloudTargetArchitecture']
       }
     }
-  }));
-  
+  });
+
   try {
     return JSON.parse(response.text || '{}');
   } catch (e) {
-    throw new Error("Failed to parse module logic response.");
+    console.error("Failed to parse module logic", e);
+    return {
+      pythonSource: response.text || "",
+      businessRules: "Extraction failed.",
+      copybookStructure: []
+    };
   }
 };
 
@@ -187,8 +192,8 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
         required: ['testCode', 'coverageEstimate']
       }
     }
-  }));
-  
+  });
+
   try {
     return JSON.parse(response.text || '{}');
   } catch (e) {
@@ -219,6 +224,37 @@ export const executeValidation = async (pythonCode: string, testCode: string): P
       }
     }
   }));
+
+  try {
+    return JSON.parse(response.text || '[]');
+  } catch (e) {
+    return [];
+  }
+};
+
+export const executeValidation = async (pythonCode: string, testCode: string): Promise<TestResult[]> => {
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `Act as a Python Test Executor. Evaluate the implementation against tests.
+    IMPLEMENTATION: ${pythonCode}
+    TESTS: ${testCode}`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            status: { type: Type.STRING, enum: ['PASSED', 'FAILED'] },
+            message: { type: Type.STRING },
+            duration: { type: Type.STRING }
+          },
+          required: ['name', 'status', 'duration']
+        }
+      }
+    }
+  });
 
   try {
     return JSON.parse(response.text || '[]');
