@@ -14,7 +14,7 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000)
   } catch (error: any) {
     const errorString = error?.toString() || "";
     const isRetryable = errorString.includes("503") || errorString.includes("429") || errorString.includes("overloaded") || errorString.includes("Rate limit");
-    
+
     if (retries > 0 && isRetryable) {
       console.warn(`API Overloaded or Rate Limited. Retrying in ${delay}ms... (${retries} retries left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -63,8 +63,7 @@ export const analyzeLegacyCodebase = async (fullCode: string) => {
     4. Perform deep data archaeology on EBCDIC and record-level storage requirements.
     Code snippet: ${fullCode.substring(0, 8000)}...`,
     config: {
-      temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 16384 }
+      temperature: 0.1
     }
   }));
   return response.text;
@@ -98,7 +97,7 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
       }
     }
   }));
-  
+
   try {
     return JSON.parse(response.text || '{"chunks": []}');
   } catch (e) {
@@ -106,11 +105,11 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
   }
 };
 
-export const processModuleLogic = async (chunk: CodeChunk, modernResearch: string): Promise<{ 
-  pythonSource: string, 
-  businessRules: string, 
-  copybookStructure: CopybookField[], 
-  cloudTargetArchitecture: CloudMapping[] 
+export const processModuleLogic = async (chunk: CodeChunk, modernResearch: string): Promise<{
+  pythonSource: string,
+  businessRules: string,
+  copybookStructure: CopybookField[],
+  cloudTargetArchitecture: CloudMapping[]
 }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-pro-preview',
@@ -123,7 +122,6 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
     COBOL Source: ${chunk.cobolSource}`,
     config: {
       temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 16384 },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -160,7 +158,7 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
       }
     }
   }));
-  
+
   try {
     return JSON.parse(response.text || '{}');
   } catch (e) {
@@ -188,7 +186,7 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
       }
     }
   }));
-  
+
   try {
     return JSON.parse(response.text || '{}');
   } catch (e) {
