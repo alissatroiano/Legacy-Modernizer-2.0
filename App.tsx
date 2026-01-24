@@ -294,9 +294,10 @@ ${c.pythonSource}
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tight flex items-center space-x-2">
-                <span>LegacyLink AI</span>
+                <span>Logic Lift</span>
               </h1>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Autonomous Banking Modernization & Core Logic Archaeology</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+              Autonomous Banking Modernization & Core Logic Archaeology</p>
             </div>
           </div>
           <div className="flex items-center space-x-6">
