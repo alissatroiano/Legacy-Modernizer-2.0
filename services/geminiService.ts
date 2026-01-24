@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { CodeChunk, CopybookField } from "../types";
+import { CodeChunk, CopybookField, TestResult } from "../types";
 
 // Always use the API key directly from the environment variable as per guidelines.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -53,7 +53,7 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
       }
     }
   });
-  
+
   try {
     return JSON.parse(response.text || '{"chunks": []}');
   } catch (e) {
@@ -114,15 +114,15 @@ export const processModuleLogic = async (chunk: CodeChunk): Promise<{ pythonSour
       }
     }
   });
-  
+
   try {
     return JSON.parse(response.text || '{"pythonSource": "", "businessRules": "", "copybookStructure": []}');
   } catch (e) {
     console.error("Failed to parse module logic", e);
-    return { 
-      pythonSource: response.text || "", 
-      businessRules: "Extraction failed.", 
-      copybookStructure: [] 
+    return {
+      pythonSource: response.text || "",
+      businessRules: "Extraction failed.",
+      copybookStructure: []
     };
   }
 };
@@ -153,10 +153,41 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
       }
     }
   });
-  
+
   try {
     return JSON.parse(response.text || '{"testCode": "", "coverageEstimate": 0}');
   } catch (e) {
     return { testCode: response.text || "", coverageEstimate: 0 };
+  }
+};
+
+export const executeValidation = async (pythonCode: string, testCode: string): Promise<TestResult[]> => {
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: `Act as a Python Test Executor. Evaluate the implementation against tests.
+    IMPLEMENTATION: ${pythonCode}
+    TESTS: ${testCode}`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: { type: Type.STRING },
+            status: { type: Type.STRING, enum: ['PASSED', 'FAILED'] },
+            message: { type: Type.STRING },
+            duration: { type: Type.STRING }
+          },
+          required: ['name', 'status', 'duration']
+        }
+      }
+    }
+  });
+
+  try {
+    return JSON.parse(response.text || '[]');
+  } catch (e) {
+    return [];
   }
 };

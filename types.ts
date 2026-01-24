@@ -36,3 +36,15 @@ export interface MigrationState {
   status: MigrationStatus;
   overallPlan?: string;
 }
+
+export interface TestResult {
+  name: string;
+  status: 'PASSED' | 'FAILED';
+  message?: string;
+  duration: string;
+}
+
+export interface GroundingSource {
+  title: string;
+  uri: string;
+}

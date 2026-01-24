@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { 
-  Terminal, 
-  Play, 
-  CheckCircle, 
-  FileCode, 
-  AlertCircle, 
-  Zap, 
-  Layers, 
-  Cpu, 
+import {
+  Terminal,
+  Play,
+  CheckCircle,
+  FileCode,
+  AlertCircle,
+  Zap,
+  Layers,
+  Cpu,
   ChevronRight,
   Database,
   ArrowRightLeft,
@@ -28,21 +28,21 @@ import {
   Table,
   Link2
 } from 'lucide-react';
-import { MigrationStatus, MigrationState, CodeChunk, CopybookField } from './types';
+import { MigrationStatus, MigrationState, CodeChunk, TestResult } from './types';
 import * as gemini from './services/geminiService';
 
 /**
  * Renders large code strings progressively to keep the UI responsive.
  */
-const ProgressiveCodeBlock: React.FC<{ 
-  code?: string; 
-  className?: string; 
+const ProgressiveCodeBlock: React.FC<{
+  code?: string;
+  className?: string;
   placeholder?: string;
   chunkSize?: number;
 }> = ({ code, className, placeholder, chunkSize = 80 }) => {
   const [displayLines, setDisplayLines] = useState<string[]>([]);
   const [isFinished, setIsFinished] = useState(false);
-  
+
   useEffect(() => {
     if (!code) {
       setDisplayLines([]);
@@ -52,23 +52,25 @@ const ProgressiveCodeBlock: React.FC<{
 
     const allLines = code.split('\n');
     const total = allLines.length;
-    
+
     // Initial batch
     setDisplayLines(allLines.slice(0, chunkSize));
     setIsFinished(chunkSize >= total);
-    
+
     let currentIdx = chunkSize;
     let frameId: number;
 
+    /* Thinking budget is now handled internally by the service or ignored */
+    const getThinkingBudget = useCallback(() => undefined, []);
     const streamLines = () => {
       if (currentIdx >= total) {
         setIsFinished(true);
         return;
       }
-      
+
       const endIdx = Math.min(currentIdx + chunkSize, total);
       const nextBatch = allLines.slice(currentIdx, endIdx);
-      
+
       setDisplayLines(prev => [...prev, ...nextBatch]);
       currentIdx = endIdx;
       frameId = requestAnimationFrame(streamLines);
@@ -107,9 +109,10 @@ const App: React.FC = () => {
   const [inputCode, setInputCode] = useState<string>('');
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'functional' | 'technical' | 'validation'>('functional');
-  const [logs, setLogs] = useState<{msg: string, type: 'info' | 'success' | 'error'}[]>([]);
+  const [logs, setLogs] = useState<{ msg: string, type: 'info' | 'success' | 'error' | 'thinking' }[]>([]);
+  const [isRunningTests, setIsRunningTests] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const addLog = useCallback((msg: string, type: 'info' | 'success' | 'error' = 'info') => {
     setLogs(prev => [...prev, { msg, type }]);
   }, []);
@@ -119,7 +122,7 @@ const App: React.FC = () => {
     if (!files || files.length === 0) return;
 
     addLog(`Reading ${files.length} file(s)...`, 'info');
-    
+
     (Array.from(files) as File[]).forEach(file => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -134,7 +137,7 @@ const App: React.FC = () => {
       };
       reader.readAsText(file);
     });
-    
+
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -189,11 +192,11 @@ const App: React.FC = () => {
 
     try {
       const analysis = await gemini.analyzeLegacyCodebase(inputCode);
-      addLog("Mainframe domain mapping complete (EBCDIC/VSAM detected).", 'success');
-      
+      addLog(`Mainframe Blueprint synthesized.`, 'success');
+
       addLog("Decomposing system into functional modules...", 'info');
       const { chunks: rawChunks } = await gemini.splitCodeIntoChunks(inputCode);
-      
+
       const chunks: CodeChunk[] = rawChunks.map((c, idx) => ({
         id: `chunk-${idx}`,
         name: c.name,
@@ -219,7 +222,7 @@ const App: React.FC = () => {
 
   const processNextChunk = useCallback(async () => {
     const { chunks, currentChunkIndex, status } = migrationState;
-    
+
     if (status !== MigrationStatus.PROCESSING || currentChunkIndex >= chunks.length || currentChunkIndex === -1) {
       return;
     }
@@ -227,26 +230,26 @@ const App: React.FC = () => {
     const chunk = chunks[currentChunkIndex];
     if (chunk.status !== 'PENDING') return;
 
-    addLog(`Resolving data patterns for: ${chunk.name}...`, 'info');
+    addLog(`Modernizing ${chunk.name} using Logic Blueprint...`, 'info');
 
     try {
+      // Direct processing without search, as per new service API
+      addLog(`Applying deep mainframe reasoning for ${chunk.name}...`, 'thinking');
+
       const result = await gemini.processModuleLogic(chunk);
-      
-      addLog(`Synthesizing validation suite for: ${chunk.name}...`, 'info');
+      addLog(`Generating autonomous test suite for ${chunk.name}...`, 'info');
       const testResult = await gemini.generateTests(result.pythonSource, chunk.cobolSource);
-      
+
       setMigrationState(prev => {
         const newChunks = [...prev.chunks];
         newChunks[currentChunkIndex] = {
           ...chunk,
-          pythonSource: result.pythonSource,
-          businessRules: result.businessRules,
-          copybookStructure: result.copybookStructure,
+          ...result,
           unitTest: testResult.testCode,
           coverage: testResult.coverageEstimate,
           status: 'DONE'
         };
-        
+
         const isLast = currentChunkIndex === newChunks.length - 1;
         const newProcessedLines = prev.processedLines + chunk.cobolSource.split('\n').length;
 
@@ -265,7 +268,7 @@ const App: React.FC = () => {
       setMigrationState(prev => {
         const newChunks = [...prev.chunks];
         newChunks[currentChunkIndex] = { ...chunk, status: 'ERROR', coverage: 0 };
-        
+
         const isLast = currentChunkIndex === newChunks.length - 1;
         const newProcessedLines = prev.processedLines + chunk.cobolSource.split('\n').length;
 
@@ -289,15 +292,15 @@ const App: React.FC = () => {
     }
   }, [migrationState.status, migrationState.currentChunkIndex, processNextChunk]);
 
-  const selectedChunk = migrationState.chunks.find(c => c.id === selectedChunkId) || 
-                          migrationState.chunks[migrationState.currentChunkIndex];
+  const selectedChunk = migrationState.chunks.find(c => c.id === selectedChunkId) ||
+    migrationState.chunks[migrationState.currentChunkIndex];
 
-  const progressPercentage = migrationState.totalLines > 0 
-    ? Math.round((migrationState.processedLines / migrationState.totalLines) * 100) 
+  const progressPercentage = migrationState.totalLines > 0
+    ? Math.round((migrationState.processedLines / migrationState.totalLines) * 100)
     : 0;
 
   const completedChunks = migrationState.chunks.filter(c => c.status === 'DONE');
-  const overallCoverage = completedChunks.length > 0 
+  const overallCoverage = completedChunks.length > 0
     ? Math.round(completedChunks.reduce((acc, c) => acc + (c.coverage || 0), 0) / completedChunks.length)
     : 0;
 
@@ -305,13 +308,13 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        className="hidden" 
-        multiple 
-        accept=".cbl,.cob,.txt,.src" 
-        onChange={handleFileUpload} 
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        multiple
+        accept=".cbl,.cob,.txt,.src"
+        onChange={handleFileUpload}
       />
 
       <header className="bg-slate-900 text-white p-4 border-b border-slate-700 sticky top-0 z-50 shadow-lg">
@@ -326,18 +329,18 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-             <div className="flex items-center space-x-2 text-sm bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
-               <div className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'}`}></div>
-               <span className="capitalize">{migrationState.status.toLowerCase()}</span>
-             </div>
-             {isCompleted && (
-               <button 
+            <div className="flex items-center space-x-2 text-sm bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
+              <div className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'}`}></div>
+              <span className="capitalize">{migrationState.status.toLowerCase()}</span>
+            </div>
+            {isCompleted && (
+              <button
                 onClick={() => window.location.reload()}
                 className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full border border-slate-700 transition-colors"
-               >
-                 <RefreshCw className="w-4 h-4 text-slate-300" />
-               </button>
-             )}
+              >
+                <RefreshCw className="w-4 h-4 text-slate-300" />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -350,7 +353,7 @@ const App: React.FC = () => {
                 <FileCode className="w-4 h-4 text-indigo-600" />
                 <span>Source COBOL</span>
               </div>
-              <button 
+              <button
                 onClick={triggerFileUpload}
                 disabled={migrationState.status !== MigrationStatus.IDLE}
                 className="flex items-center space-x-1.5 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100 uppercase transition-all disabled:opacity-50"
@@ -359,7 +362,7 @@ const App: React.FC = () => {
                 <span>Upload Codebase</span>
               </button>
             </div>
-            <textarea 
+            <textarea
               value={inputCode}
               onChange={(e) => setInputCode(e.target.value)}
               className="w-full h-80 p-4 code-font text-sm bg-slate-900 text-indigo-200 focus:outline-none resize-none"
@@ -367,7 +370,7 @@ const App: React.FC = () => {
               disabled={migrationState.status !== MigrationStatus.IDLE}
             />
             <div className="p-4 bg-white">
-              <button 
+              <button
                 onClick={handleStartMigration}
                 disabled={migrationState.status !== MigrationStatus.IDLE || !inputCode}
                 className={`w-full py-3 px-4 rounded-lg flex items-center justify-center space-x-2 font-semibold transition-all shadow-md
@@ -405,7 +408,7 @@ const App: React.FC = () => {
                 <span className="text-xs text-slate-400">{migrationState.processedLines} LoC</span>
               </div>
               <div className="w-full bg-slate-100 h-2 rounded-full mt-2">
-                <div className={`h-full rounded-full transition-all duration-700 ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-600'}`} style={{width: `${progressPercentage}%`}}></div>
+                <div className={`h-full rounded-full transition-all duration-700 ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-600'}`} style={{ width: `${progressPercentage}%` }}></div>
               </div>
             </div>
 
@@ -426,7 +429,7 @@ const App: React.FC = () => {
               </div>
               <p className="text-[10px] text-slate-500 mt-2">Isolated logic units</p>
             </div>
-            
+
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <p className="text-xs text-slate-400 font-medium uppercase mb-1 tracking-tighter">Data Compliance</p>
               <div className="flex items-center space-x-2">
@@ -449,7 +452,7 @@ const App: React.FC = () => {
               </div>
               <div className="overflow-y-auto flex-1 bg-slate-50/20">
                 {migrationState.chunks.map((chunk, idx) => (
-                  <button 
+                  <button
                     key={chunk.id}
                     onClick={() => setSelectedChunkId(chunk.id)}
                     className={`w-full p-4 flex items-center justify-between border-b border-slate-50 transition-colors text-left
@@ -464,8 +467,8 @@ const App: React.FC = () => {
                       <div className="truncate">
                         <p className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight">{chunk.name}</p>
                         <div className="flex items-center space-x-2 mt-0.5">
-                           <span className="text-[9px] text-slate-400">Parity: {chunk.coverage || 0}%</span>
-                           {chunk.status === 'DONE' && <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>}
+                          <span className="text-[9px] text-slate-400">Parity: {chunk.coverage || 0}%</span>
+                          {chunk.status === 'DONE' && <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>}
                         </div>
                       </div>
                     </div>
@@ -480,21 +483,21 @@ const App: React.FC = () => {
                 <>
                   <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50 space-x-4 overflow-x-auto no-scrollbar">
                     <div className="flex items-center space-x-1.5 bg-white px-1.5 py-1 rounded-lg border border-slate-200 shadow-sm flex-shrink-0">
-                      <button 
+                      <button
                         onClick={() => setViewMode('functional')}
                         className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'functional' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
                       >
                         <BookOpen className="w-3 h-3" />
                         <span className="whitespace-nowrap">Functional Blueprint</span>
                       </button>
-                      <button 
+                      <button
                         onClick={() => setViewMode('technical')}
                         className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'technical' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
                       >
                         <Cpu className="w-3 h-3" />
                         <span className="whitespace-nowrap">Modern implementation</span>
                       </button>
-                      <button 
+                      <button
                         onClick={() => setViewMode('validation')}
                         className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'validation' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
                       >
@@ -503,7 +506,7 @@ const App: React.FC = () => {
                       </button>
                     </div>
                     {selectedChunk.status === 'DONE' && (
-                      <button 
+                      <button
                         onClick={() => handleExport(selectedChunk)}
                         className="flex items-center space-x-2 text-[10px] font-bold bg-slate-800 text-white px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-md flex-shrink-0"
                       >
@@ -519,13 +522,13 @@ const App: React.FC = () => {
                       <div className="p-6 space-y-6">
                         <div className="flex items-center justify-between border-b border-indigo-50 pb-2 mb-4">
                           <div className="flex items-center space-x-2 text-indigo-600">
-                             <ScrollText className="w-5 h-5" />
-                             <h4 className="font-black text-sm uppercase tracking-widest">Logic Archaeology</h4>
+                            <ScrollText className="w-5 h-5" />
+                            <h4 className="font-black text-sm uppercase tracking-widest">Logic Archaeology</h4>
                           </div>
                           <div className="flex items-center space-x-3">
-                             <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><Binary className="w-3 h-3"/> <span>EBCDIC AWARE</span></span>
-                             <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><HardDrive className="w-3 h-3"/> <span>VSAM RESOLVED</span></span>
-                             <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-500"><ShieldAlert className="w-3 h-3"/> <span>ERROR RESILIENT</span></span>
+                            <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><Binary className="w-3 h-3" /> <span>EBCDIC AWARE</span></span>
+                            <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><HardDrive className="w-3 h-3" /> <span>VSAM RESOLVED</span></span>
+                            <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-500"><ShieldAlert className="w-3 h-3" /> <span>ERROR RESILIENT</span></span>
                           </div>
                         </div>
 
@@ -587,20 +590,20 @@ const App: React.FC = () => {
                             )}
 
                             <div className="grid grid-cols-2 gap-4">
-                               <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
-                                  <p className="text-[10px] font-bold text-emerald-600 uppercase mb-2">Mainframe Artifact Mapping</p>
-                                  <ul className="text-[11px] text-emerald-800 space-y-1">
-                                    <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-emerald-400 rounded-full"></div><span>COMP-3 packed decimals mapped to high-precision Decimal.</span></li>
-                                    <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-emerald-400 rounded-full"></div><span>Copybook record structures virtualized as Pydantic models.</span></li>
-                                  </ul>
-                               </div>
-                               <div className="bg-rose-50 p-4 rounded-xl border border-rose-100">
-                                  <p className="text-[10px] font-bold text-rose-600 uppercase mb-2">Resilience Abstraction</p>
-                                  <ul className="text-[11px] text-rose-800 space-y-1">
-                                    <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-rose-400 rounded-full"></div><span>EBCDIC decoding failures handled via custom fallbacks.</span></li>
-                                    <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-rose-400 rounded-full"></div><span>I/O interruptions protected by robust exception bubbling.</span></li>
-                                  </ul>
-                               </div>
+                              <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                                <p className="text-[10px] font-bold text-emerald-600 uppercase mb-2">Mainframe Artifact Mapping</p>
+                                <ul className="text-[11px] text-emerald-800 space-y-1">
+                                  <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-emerald-400 rounded-full"></div><span>COMP-3 packed decimals mapped to high-precision Decimal.</span></li>
+                                  <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-emerald-400 rounded-full"></div><span>Copybook record structures virtualized as Pydantic models.</span></li>
+                                </ul>
+                              </div>
+                              <div className="bg-rose-50 p-4 rounded-xl border border-rose-100">
+                                <p className="text-[10px] font-bold text-rose-600 uppercase mb-2">Resilience Abstraction</p>
+                                <ul className="text-[11px] text-rose-800 space-y-1">
+                                  <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-rose-400 rounded-full"></div><span>EBCDIC decoding failures handled via custom fallbacks.</span></li>
+                                  <li className="flex items-center space-x-2"><div className="w-1 h-1 bg-rose-400 rounded-full"></div><span>I/O interruptions protected by robust exception bubbling.</span></li>
+                                </ul>
+                              </div>
                             </div>
                           </div>
                         ) : (
@@ -614,27 +617,27 @@ const App: React.FC = () => {
 
                     {viewMode === 'technical' && (
                       <div className="p-4 space-y-6">
-                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            <div>
-                              <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Legacy Code (EBCDIC/Copybook)</label>
-                              <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 h-96 overflow-auto shadow-inner">
-                                <ProgressiveCodeBlock 
-                                  code={selectedChunk.cobolSource} 
-                                  className="code-font text-[11px] text-slate-500 leading-relaxed" 
-                                />
-                              </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Legacy Code (EBCDIC/Copybook)</label>
+                            <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 h-96 overflow-auto shadow-inner">
+                              <ProgressiveCodeBlock
+                                code={selectedChunk.cobolSource}
+                                className="code-font text-[11px] text-slate-500 leading-relaxed"
+                              />
                             </div>
-                            <div>
-                              <label className="text-[9px] font-bold text-indigo-400 uppercase mb-1 block">Clean Python with Error Resilience</label>
-                              <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 h-96 overflow-auto shadow-xl">
-                                <ProgressiveCodeBlock 
-                                  code={selectedChunk.pythonSource} 
-                                  placeholder="# Reconstructing logic architecture..."
-                                  className="code-font text-[11px] text-indigo-200 leading-relaxed whitespace-pre-wrap" 
-                                />
-                              </div>
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold text-indigo-400 uppercase mb-1 block">Clean Python with Error Resilience</label>
+                            <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 h-96 overflow-auto shadow-xl">
+                              <ProgressiveCodeBlock
+                                code={selectedChunk.pythonSource}
+                                placeholder="# Reconstructing logic architecture..."
+                                className="code-font text-[11px] text-indigo-200 leading-relaxed whitespace-pre-wrap"
+                              />
                             </div>
-                         </div>
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -654,9 +657,9 @@ const App: React.FC = () => {
                         </div>
                         {selectedChunk.unitTest ? (
                           <div className="bg-slate-900 border border-emerald-900/30 rounded-xl p-5 shadow-2xl relative">
-                            <ProgressiveCodeBlock 
-                              code={selectedChunk.unitTest} 
-                              className="code-font text-[11px] text-emerald-400/90 leading-relaxed whitespace-pre-wrap overflow-x-auto" 
+                            <ProgressiveCodeBlock
+                              code={selectedChunk.unitTest}
+                              className="code-font text-[11px] text-emerald-400/90 leading-relaxed whitespace-pre-wrap overflow-x-auto"
                             />
                           </div>
                         ) : (
@@ -666,21 +669,21 @@ const App: React.FC = () => {
                           </div>
                         )}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                           <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                             <CheckCircle className="w-4 h-4 text-emerald-500 mb-2" />
-                             <h5 className="text-[10px] font-black text-slate-400 uppercase">Arithmetic Accuracy</h5>
-                             <p className="text-[11px] text-slate-600">Decimal precision verified against original COMP-3 rules.</p>
-                           </div>
-                           <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                             <CheckCircle className="w-4 h-4 text-emerald-500 mb-2" />
-                             <h5 className="text-[10px] font-black text-slate-400 uppercase">Resilience Testing</h5>
-                             <p className="text-[11px] text-slate-600">Negative tests for EBCDIC corruption and I/O failures.</p>
-                           </div>
-                           <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                             <CheckCircle className="w-4 h-4 text-emerald-500 mb-2" />
-                             <h5 className="text-[10px] font-black text-slate-400 uppercase">Entity Integrity</h5>
-                             <p className="text-[11px] text-slate-600">Copybook record types validated through Pydantic schemas.</p>
-                           </div>
+                          <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                            <CheckCircle className="w-4 h-4 text-emerald-500 mb-2" />
+                            <h5 className="text-[10px] font-black text-slate-400 uppercase">Arithmetic Accuracy</h5>
+                            <p className="text-[11px] text-slate-600">Decimal precision verified against original COMP-3 rules.</p>
+                          </div>
+                          <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                            <CheckCircle className="w-4 h-4 text-emerald-500 mb-2" />
+                            <h5 className="text-[10px] font-black text-slate-400 uppercase">Resilience Testing</h5>
+                            <p className="text-[11px] text-slate-600">Negative tests for EBCDIC corruption and I/O failures.</p>
+                          </div>
+                          <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                            <CheckCircle className="w-4 h-4 text-emerald-500 mb-2" />
+                            <h5 className="text-[10px] font-black text-slate-400 uppercase">Entity Integrity</h5>
+                            <p className="text-[11px] text-slate-600">Copybook record types validated through Pydantic schemas.</p>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -731,7 +734,7 @@ const App: React.FC = () => {
             <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span>Mainframe Syntax Decoupled</span></span>
           </div>
           <div className="flex items-center space-x-2">
-             <span>Gemini 3 Pro Modernization Stack</span>
+            <span>Gemini 3 Pro Modernization Stack</span>
           </div>
         </div>
       </footer>
