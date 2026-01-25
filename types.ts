@@ -58,15 +58,3 @@ export interface MigrationState {
   overallPlan?: string;
   globalGroundingSources?: GroundingSource[];
 }
-
-export interface TestResult {
-  name: string;
-  status: 'PASSED' | 'FAILED';
-  message?: string;
-  duration: string;
-}
-
-export interface GroundingSource {
-  title: string;
-  uri: string;
-}
