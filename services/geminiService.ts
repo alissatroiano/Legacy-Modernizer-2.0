@@ -191,3 +191,57 @@ export const executeValidation = async (pythonCode: string, testCode: string): P
     return [];
   }
 };
+export const selfHealPythonCode = async (
+  chunk: CodeChunk,
+  currentPython: string,
+  testSuite: string,
+  errors: TestResult[]
+): Promise<{ pythonSource: string, explanation: string }> => {
+  const failureContext = errors
+    .filter(e => e.status === 'FAILED')
+    .map(e => `Test: ${e.name}\nResult: ${e.status}\nMessage: ${e.message}`)
+    .join('\n\n');
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-pro-preview',
+    contents: `
+    Act as a Senior Python Debugger and Mainframe Expert.
+    
+    ORIGINAL COBOL:
+    ${chunk.cobolSource}
+    
+    CURRENT PYTHON IMPLEMENTATION (FAILED):
+    ${currentPython}
+    
+    TEST SUITE USED:
+    ${testSuite}
+    
+    FAILURE LOGS:
+    ${failureContext}
+    
+    TASK:
+    Identify why the Python implementation is failing to match the COBOL logic or failing the tests.
+    Generate a FIXED version of the Python code.
+    Provide a brief explanation of the fix.
+    `,
+    config: {
+      temperature: 0.1,
+      thinkingConfig: { thinkingBudget: 8000 },
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          pythonSource: { type: Type.STRING },
+          explanation: { type: Type.STRING }
+        },
+        required: ['pythonSource', 'explanation']
+      }
+    }
+  });
+
+  try {
+    return JSON.parse(response.text || '{}');
+  } catch (e) {
+    return { pythonSource: currentPython, explanation: "Self-healing failed to parse response." };
+  }
+};

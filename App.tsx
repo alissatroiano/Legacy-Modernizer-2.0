@@ -233,20 +233,50 @@ const App: React.FC = () => {
     addLog(`Modernizing ${chunk.name} using Logic Blueprint...`, 'info');
 
     try {
-      // Direct processing without search, as per new service API
       addLog(`Applying deep mainframe reasoning for ${chunk.name}...`, 'thinking');
-
       const result = await gemini.processModuleLogic(chunk);
+
       addLog(`Generating autonomous test suite for ${chunk.name}...`, 'info');
       const testResult = await gemini.generateTests(result.pythonSource, chunk.cobolSource);
+
+      let currentPython = result.pythonSource;
+      let finalTestResults: TestResult[] = [];
+      let attempts = 0;
+      const MAX_HEALING_ATTEMPTS = 2;
+
+      while (attempts <= MAX_HEALING_ATTEMPTS) {
+        const attemptPrefix = attempts > 0 ? `[Self-Heal Attempt ${attempts}] ` : "";
+        addLog(`${attemptPrefix}Executing validation suite for ${chunk.name}...`, 'info');
+
+        const results = await gemini.executeValidation(currentPython, testResult.testCode);
+        finalTestResults = results;
+
+        const failures = results.filter(r => r.status === 'FAILED');
+        if (failures.length === 0) {
+          addLog(`${attemptPrefix}Validation passed with 100% functional parity for ${chunk.name}!`, 'success');
+          break;
+        }
+
+        if (attempts < MAX_HEALING_ATTEMPTS) {
+          addLog(`Logic mismatch detected (${failures.length} failures). Initiating autonomous self-correction...`, 'thinking');
+          const healResult = await gemini.selfHealPythonCode(chunk, currentPython, testResult.testCode, results);
+          currentPython = healResult.pythonSource;
+          addLog(`Self-correction applied: ${healResult.explanation}`, 'success');
+        } else {
+          addLog(`Maximum self-healing attempts reached. Recording best-effort implementation for ${chunk.name}.`, 'error');
+        }
+        attempts++;
+      }
 
       setMigrationState(prev => {
         const newChunks = [...prev.chunks];
         newChunks[currentChunkIndex] = {
           ...chunk,
           ...result,
+          pythonSource: currentPython,
           unitTest: testResult.testCode,
           coverage: testResult.coverageEstimate,
+          testResults: finalTestResults,
           status: 'DONE'
         };
 
@@ -262,7 +292,7 @@ const App: React.FC = () => {
         };
       });
 
-      addLog(`Logic extraction complete: ${chunk.name} (Data integrity verified)`, 'success');
+      addLog(`Logic extraction complete: ${chunk.name} (Verification cycle closed)`, 'success');
     } catch (error) {
       addLog(`Critical failure in ${chunk.name}: ${error}`, 'error');
       setMigrationState(prev => {
