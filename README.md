@@ -1,17 +1,12 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Logic Lift 
 
-# Run and deploy your AI Studio app
+Logic Lift AI is an autonomous modernization platform designed to solve the "Black Box" Legacy Crisis in critical industries like banking, insurance, and government. It doesn't just translate code; it performs Logic Archaeology to extract buried business rules from 40-year-old COBOL systems and reconstructs them into modern, cloud-native Python architectures on Google Cloud.
 
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/drive/1tYrEbfBaEJ7zM5hmj-ZFEhYjZYbPj0DQ
+In the real world, this solves the multi-billion dollar problem of Migration Risk: by using Autonomous Verification Loops, the program generates and executes test artifacts that prove the new system behaves exactly like the old one. This eliminates the need for manual logic recovery and drastically reduces the fear of system-wide outages during legacy-to-cloud transitions.
 
 ## Run Locally
 
 **Prerequisites:**  Node.js
-
 
 1. Install dependencies:
    `npm install`
