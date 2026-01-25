@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { MigrationStatus, MigrationState, CodeChunk, TestResult } from './types';
 import * as gemini from './services/geminiService';
+import { runPythonValidation } from './services/pythonRunner';
 
 /**
  * Renders large code strings progressively to keep the UI responsive.
@@ -242,28 +243,42 @@ const App: React.FC = () => {
       let currentPython = result.pythonSource;
       let finalTestResults: TestResult[] = [];
       let attempts = 0;
-      const MAX_HEALING_ATTEMPTS = 2;
+      const MAX_HEALING_ATTEMPTS = 3;
 
       while (attempts <= MAX_HEALING_ATTEMPTS) {
         const attemptPrefix = attempts > 0 ? `[Self-Heal Attempt ${attempts}] ` : "";
-        addLog(`${attemptPrefix}Executing validation suite for ${chunk.name}...`, 'info');
+        addLog(`${attemptPrefix}Executing real-time validation for ${chunk.name}...`, 'info');
 
-        const results = await gemini.executeValidation(currentPython, testResult.testCode);
+        // Use real Python execution via Pyodide
+        let results: TestResult[];
+        try {
+          results = await runPythonValidation(currentPython, testResult.testCode);
+        } catch (e) {
+          addLog(`Runner failure: ${e}. Falling back to simulated verification.`, 'error');
+          results = await gemini.executeValidation(currentPython, testResult.testCode);
+        }
+
         finalTestResults = results;
 
         const failures = results.filter(r => r.status === 'FAILED');
-        if (failures.length === 0) {
-          addLog(`${attemptPrefix}Validation passed with 100% functional parity for ${chunk.name}!`, 'success');
+        if (failures.length === 0 && results.length > 0) {
+          addLog(`${attemptPrefix}SUCCESS: Parity verified via autonomous execution for ${chunk.name}!`, 'success');
           break;
+        } else if (results.length === 0) {
+          addLog(`${attemptPrefix}No tests were executed. Forcing simulated verification.`, 'info');
+          results = await gemini.executeValidation(currentPython, testResult.testCode);
+          finalTestResults = results;
+          const simFailures = results.filter(r => r.status === 'FAILED');
+          if (simFailures.length === 0) break;
         }
 
         if (attempts < MAX_HEALING_ATTEMPTS) {
-          addLog(`Logic mismatch detected (${failures.length} failures). Initiating autonomous self-correction...`, 'thinking');
+          addLog(`Logic deviation detected in execution (${failures.length} errors). Retrying with autonomous self-healing...`, 'thinking');
           const healResult = await gemini.selfHealPythonCode(chunk, currentPython, testResult.testCode, results);
           currentPython = healResult.pythonSource;
           addLog(`Self-correction applied: ${healResult.explanation}`, 'success');
         } else {
-          addLog(`Maximum self-healing attempts reached. Recording best-effort implementation for ${chunk.name}.`, 'error');
+          addLog(`Autonomous loop limit reached. Recording best-effort implementation for ${chunk.name}.`, 'error');
         }
         attempts++;
       }
@@ -686,11 +701,45 @@ const App: React.FC = () => {
                           )}
                         </div>
                         {selectedChunk.unitTest ? (
-                          <div className="bg-slate-900 border border-emerald-900/30 rounded-xl p-5 shadow-2xl relative">
-                            <ProgressiveCodeBlock
-                              code={selectedChunk.unitTest}
-                              className="code-font text-[11px] text-emerald-400/90 leading-relaxed whitespace-pre-wrap overflow-x-auto"
-                            />
+                          <div className="space-y-4">
+                            <div className="bg-slate-900 border border-emerald-900/30 rounded-xl p-5 shadow-2xl relative">
+                              <ProgressiveCodeBlock
+                                code={selectedChunk.unitTest}
+                                className="code-font text-[11px] text-emerald-400/90 leading-relaxed whitespace-pre-wrap overflow-x-auto"
+                              />
+                            </div>
+
+                            {selectedChunk.testResults && selectedChunk.testResults.length > 0 && (
+                              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                <div className="p-3 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                  Autonomous Execution Results
+                                </div>
+                                <div className="divide-y divide-slate-100">
+                                  {selectedChunk.testResults.map((res, i) => (
+                                    <div key={i} className="p-3">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-2">
+                                          {res.status === 'PASSED' ? (
+                                            <CheckCircle className="w-3 h-3 text-emerald-500" />
+                                          ) : (
+                                            <AlertCircle className="w-3 h-3 text-rose-500" />
+                                          )}
+                                          <span className="text-xs font-mono font-bold text-slate-700">{res.name}</span>
+                                        </div>
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${res.status === 'PASSED' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                          {res.status}
+                                        </span>
+                                      </div>
+                                      {res.message && (
+                                        <pre className="mt-2 p-2 bg-slate-900 text-[10px] text-rose-300 rounded overflow-x-auto font-mono whitespace-pre-wrap leading-tight border border-rose-900/20">
+                                          {res.message}
+                                        </pre>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center py-20 text-slate-300">

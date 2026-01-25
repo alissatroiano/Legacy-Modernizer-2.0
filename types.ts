@@ -26,6 +26,7 @@ export interface CodeChunk {
   status: 'PENDING' | 'DONE' | 'ERROR';
   analysis?: string;
   complexity: number;
+  testResults?: TestResult[];
 }
 
 export interface MigrationState {
