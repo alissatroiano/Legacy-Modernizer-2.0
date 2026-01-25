@@ -6,19 +6,17 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Utility function to handle exponential backoff for API calls.
- * Specifically targets 503 (Overloaded) and 429 (Rate Limit) errors.
  */
-async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
   try {
     return await fn();
   } catch (error: any) {
     const errorString = error?.toString() || "";
-    const isRetryable = errorString.includes("503") || errorString.includes("429") || errorString.includes("overloaded") || errorString.includes("Rate limit");
+    const isRetryable = errorString.includes("503") || errorString.includes("429") || errorString.includes("overloaded");
     
     if (retries > 0 && isRetryable) {
-      console.warn(`API Overloaded or Rate Limited. Retrying in ${delay}ms... (${retries} retries left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return callWithRetry(fn, retries - 1, delay * 2);
+      return callWithRetry(fn, retries - 1, delay * 1.5);
     }
     throw error;
   }
@@ -27,8 +25,8 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000)
 export const researchModernEquivalents = async (query: string): Promise<{ research: string, sources: GroundingSource[] }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Identify the industry domain and find the most modern Python libraries and Google Cloud best practices for migrating this legacy module: ${query}. 
-    Focus on industry-specific precision (e.g. financial, actuarial, or logistical), high-availability GCP services, and data integrity standards.`,
+    contents: `Fast Lookup: Find modern Python libraries and GCP patterns for: ${query}. 
+    Focus on high-performance enterprise migration best practices.`,
     config: {
       tools: [{ googleSearch: {} }]
     }
@@ -54,17 +52,18 @@ export const researchModernEquivalents = async (query: string): Promise<{ resear
 };
 
 export const analyzeLegacyCodebase = async (fullCode: string) => {
+  // We keep a small thinking budget here as the initial audit sets the "Vibe" for the whole project
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: `Perform an Autonomous System Audit on this legacy COBOL source code.
-    1. Identify the Primary Domain (e.g. Banking, Insurance, Government, Logistics).
-    2. Extract a "Mission-Critical Blueprint" defining business capabilities.
-    3. Propose a GCP Landing Zone architecture optimized for this specific industry's compliance needs.
-    4. Perform deep data archaeology on EBCDIC and record-level storage requirements.
-    Code snippet: ${fullCode.substring(0, 8000)}...`,
+    model: 'gemini-3-flash-preview',
+    contents: `Rapid System Audit:
+    1. Industry Domain.
+    2. Critical Capabilities.
+    3. Optimized GCP Target.
+    Source: ${fullCode.substring(0, 10000)}...`,
     config: {
       temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 16384 }
+      // Reduced thinking budget for faster "Vibe" feedback
+      thinkingConfig: { thinkingBudget: 2048 }
     }
   }));
   return response.text;
@@ -73,9 +72,7 @@ export const analyzeLegacyCodebase = async (fullCode: string) => {
 export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: { name: string, code: string }[] }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Split the following COBOL source code into logical modules (e.g. Processing, Data Division, Procedures). 
-    Ensure modular boundaries respect the underlying business domain logic.
-    Return a JSON array of objects with 'name' and 'code' keys.
+    contents: `Break this COBOL into logical business modules. Return JSON.
     Code: ${fullCode}`,
     config: {
       responseMimeType: 'application/json',
@@ -113,17 +110,16 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
   cloudTargetArchitecture: CloudMapping[] 
 }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
+    model: 'gemini-3-flash-preview',
     contents: `
-    Act as a GCP Cloud Architect and Senior Python Engineer specializing in critical infrastructure modernization.
-    Legacy module: ${chunk.name}.
-    INDUSTRY CONTEXT & RESEARCH: ${modernResearch}
-    TASK: Deep logic archaeology and modern Python 3.12 implementation.
-    Ensure strict functional parity with the original legacy rules while utilizing cloud-native patterns.
-    COBOL Source: ${chunk.cobolSource}`,
+    Module: ${chunk.name}.
+    Context: ${modernResearch}
+    Target: Modern Python 3.12 + GCP native.
+    Legacy Logic Preservation is mandatory.
+    Source: ${chunk.cobolSource}`,
     config: {
       temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 16384 },
+      // Thinking budget removed for maximum Vibe speed
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -164,17 +160,16 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
   try {
     return JSON.parse(response.text || '{}');
   } catch (e) {
-    throw new Error("Failed to parse module logic response.");
+    throw new Error("Logic recovery failed to parse.");
   }
 };
 
 export const generateTests = async (pythonCode: string, cobolReference: string): Promise<{ testCode: string, coverageEstimate: number }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Generate robust Pytest unit tests for this enterprise Python code. 
-    Ensure edge cases for the specific business domain and COBOL-parity are covered.
+    contents: `Create Pytest suite for functional parity verification.
     Python: ${pythonCode}
-    COBOL Reference: ${cobolReference}`,
+    COBOL: ${cobolReference}`,
     config: {
       temperature: 0.1,
       responseMimeType: 'application/json',
@@ -190,7 +185,7 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
   }));
   
   try {
-    return JSON.parse(response.text || '{}');
+    return JSON.parse(response.text || '{"testCode": "", "coverageEstimate": 0}');
   } catch (e) {
     return { testCode: "", coverageEstimate: 0 };
   }
@@ -199,9 +194,9 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
 export const executeValidation = async (pythonCode: string, testCode: string): Promise<TestResult[]> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Act as a Python Test Executor. Evaluate the implementation against tests.
-    IMPLEMENTATION: ${pythonCode}
-    TESTS: ${testCode}`,
+    contents: `Run virtual tests and return report.
+    Code: ${pythonCode}
+    Tests: ${testCode}`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
