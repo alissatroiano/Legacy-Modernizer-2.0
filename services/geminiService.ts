@@ -26,8 +26,11 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 5, delay = 2000)
 export const researchModernEquivalents = async (query: string): Promise<{ research: string, sources: GroundingSource[] }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Industry Research: Find modern Python libraries and GCP architectural patterns for migrating legacy: ${query}. 
-    Specifically look for equivalents to COBOL file handling (VSAM, Indexed, Sequential) and CICS transaction patterns.`,
+    contents: `Industry Research: Find modern Python libraries and GCP architectural patterns for: ${query}. 
+    Focus on equivalents for:
+    1. VSAM/Indexed file handling (e.g., Cloud Spanner, SQLAlchemy primary key indexing).
+    2. Sequential file processing (fixed-width parsing, streaming GCS).
+    3. Relative file access (Redis, Key-Value data structures).`,
     config: {
       tools: [{ googleSearch: {} }]
     }
@@ -39,7 +42,7 @@ export const researchModernEquivalents = async (query: string): Promise<{ resear
     chunks.forEach((chunk: any) => {
       if (chunk.web) {
         sources.push({
-          title: chunk.web.title || "Technical Resource",
+          title: chunk.web.title || "Technical Documentation",
           uri: chunk.web.uri
         });
       }
@@ -55,11 +58,12 @@ export const researchModernEquivalents = async (query: string): Promise<{ resear
 export const analyzeLegacyCodebase = async (fullCode: string) => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Perform an Autonomous Deep Audit on this legacy codebase (29+ files potentially).
-    1. Identify the core domain and logical boundaries.
-    2. Map out the File Access patterns (Sequential, Indexed/VSAM, Relative).
-    3. Define the Global State/Communication Area (COMMAREA) dependencies.
-    4. Propose a GCP architecture (Cloud Spanner, SQL, or GCS) based on the observed data access.
+    contents: `Autonomous System Audit for Modernization:
+    Analyze this large codebase of multiple legacy programs:
+    1. Logical Topology: Identify all PROGRAM-IDs and their call hierarchies.
+    2. File Management: List all SELECT/ASSIGN statements. Categorize them as SEQUENTIAL, INDEXED (VSAM), or RELATIVE.
+    3. State Tracking: Note the structure of COMMAREA or LINKAGE SECTION for inter-module communication.
+    4. Target Architecture: Propose a GCP-native data persistence strategy that preserves record-level integrity.
     
     Source Digest: ${fullCode.substring(0, 15000)}...`,
     config: {
@@ -73,11 +77,15 @@ export const analyzeLegacyCodebase = async (fullCode: string) => {
 export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: { name: string, code: string }[] }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Deconstruct this large legacy codebase into high-fidelity logical modules. 
-    Crucial: Do not aggregate unrelated files. Each major COBOL program or subprogram should be its own module.
-    Ensure 'FILE SECTION' and 'WORKING-STORAGE' context is preserved or noted for each module.
-    Return a comprehensive JSON array.
-    Code: ${fullCode.substring(0, 20000)}`,
+    contents: `Deconstruct this legacy codebase into individual functional modules. 
+    MANDATORY GRANULARITY RULE: 
+    - Every 'PROGRAM-ID' or distinct '.cbl' source file must be its own module. 
+    - Do NOT collapse multiple programs into one module.
+    - If there are 29 distinct programs, return 29 objects in the array.
+    - Ensure each module includes its corresponding FILE-CONTROL and DATA DIVISION segments.
+    
+    Return a JSON array of {name, code}.
+    Source: ${fullCode.substring(0, 25000)}`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -96,16 +104,17 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
           }
         },
         required: ['chunks']
-      }
+      },
+      thinkingConfig: { thinkingBudget: 8192 }
     }
   }));
   
   try {
     const parsed = JSON.parse(response.text || '{"chunks": []}');
     if (parsed.chunks && parsed.chunks.length > 0) return parsed;
-    throw new Error("Empty chunks returned");
+    throw new Error("Module splitting failed to identify distinct programs.");
   } catch (e) {
-    return { chunks: [{ name: "Core Module", code: fullCode }] };
+    return { chunks: [{ name: "Main System Core", code: fullCode }] };
   }
 };
 
@@ -118,15 +127,17 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: `
-    Target: Modern Python 3.12 Enterprise Implementation.
-    Module: ${chunk.name}.
-    Context: ${modernResearch}
+    Module Modernization Engine: ${chunk.name}
+    Grounding Context: ${modernResearch}
     
-    MANDATORY REQUIREMENTS:
-    1. FILE ACCESS: Map COBOL file modes (Sequential, Indexed, Relative) to appropriate Python persistence patterns (e.g. Pandas for Seq, SQLAlchemy/SQL for Indexed/VSAM).
-    2. DATA INTEGRITY: Implement specific data validation for record formats and PIC clauses.
-    3. STATE: Map COMMAREA or LINKAGE SECTION to FastAPI/Flask session or parameter objects.
-    4. PARITY: Ensure every 'IF', 'PERFORM', and 'EVALUATE' block is logically represented.
+    LOGIC ARCHAEOLOGY REQUIREMENTS:
+    1. FILE ACCESS PARITY:
+       - SEQUENTIAL: Implement as generators or Pandas dataframes using fixed-width formatters.
+       - INDEXED (VSAM): Implement using a Repository pattern with SQLAlchemy. Primary keys must match COBOL RECORD KEYs.
+       - RELATIVE: Implement as keyed lookups (dictionary or Redis).
+    2. DATA INTEGRITY: Use Python Type Hints and Pydantic validators to mirror COBOL 'PIC' clauses (e.g., PIC 9(5) becomes a range-validated integer).
+    3. PERFORMANCE: Ensure efficient file/DB I/O by implementing COBOL's 'READ NEXT' as indexed database queries.
+    4. ERROR HANDLING: Mirror FILE STATUS codes (e.g., 00, 10, 23) using custom Python exceptions for specific database/file errors.
     
     Source: ${chunk.cobolSource}`,
     config: {
@@ -172,20 +183,21 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
   try {
     return JSON.parse(response.text || '{}');
   } catch (e) {
-    throw new Error(`Logic Archaeology failed for ${chunk.name}`);
+    throw new Error(`Logic archaeology failed for ${chunk.name}`);
   }
 };
 
 export const generateTests = async (pythonCode: string, cobolReference: string): Promise<{ testCode: string, coverageEstimate: number }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-pro-preview',
-    contents: `Synthesize a rigorous Pytest suite for functional parity verification.
-    The tests MUST mock the File Access layer to verify that Python correctly handles what was previously COBOL file operations.
-    Python: ${pythonCode}
+    contents: `Generate a functional parity test suite (Pytest).
+    Ensure the tests mock the Data Access Layer to verify that the Python logic handles Sequential/Indexed/Relative file operations identically to the legacy system.
+    
+    Python Code: ${pythonCode}
     COBOL Reference: ${cobolReference}`,
     config: {
       temperature: 0.1,
-      thinkingConfig: { thinkingBudget: 4096 },
+      thinkingConfig: { thinkingBudget: 8192 },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -208,9 +220,10 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
 export const executeValidation = async (pythonCode: string, testCode: string): Promise<TestResult[]> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Execute this virtual validation cycle.
-    IMPLEMENTATION: ${pythonCode}
-    TEST SUITE: ${testCode}`,
+    contents: `Virtual Parity Verification.
+    Return a detailed status for each logical branch test.
+    Implementation: ${pythonCode}
+    Test Suite: ${testCode}`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
