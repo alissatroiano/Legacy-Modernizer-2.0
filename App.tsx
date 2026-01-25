@@ -293,44 +293,44 @@ const App: React.FC = () => {
         const isLast = currentChunkIndex === newChunks.length - 1;
         const newProcessedLines = prev.processedLines + chunk.cobolSource.split('\n').length;
 
-  const runTests = async (chunk: CodeChunk) => {
-    if (!chunk.pythonSource || !chunk.unitTest || isRunningTests) return;
-    
-    setIsRunningTests(true);
-    addLog(`Autonomous Verification: Testing ${chunk.name}...`, 'info');
-    
-    try {
-      const results = await gemini.executeValidation(chunk.pythonSource, chunk.unitTest);
-      
-      setMigrationState(prev => {
-        const newChunks = prev.chunks.map(c => 
-          c.id === chunk.id ? { ...c, testResults: results } : c
-        );
-        return { ...prev, chunks: newChunks };
-      });
-      
-      const passCount = results.filter(r => r.status === 'PASSED').length;
-      addLog(`Test Run Result: ${passCount}/${results.length} PASSED`, passCount === results.length ? 'success' : 'error');
-    } catch (error) {
-      addLog(`Test Execution Failure: ${error}`, 'error');
-    } finally {
-      setIsRunningTests(false);
-    }
-  };
+        const runTests = async (chunk: CodeChunk) => {
+          if (!chunk.pythonSource || !chunk.unitTest || isRunningTests) return;
 
-  const downloadFile = (content: string, filename: string) => {
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
+          setIsRunningTests(true);
+          addLog(`Autonomous Verification: Testing ${chunk.name}...`, 'info');
 
-  const downloadArtifact = () => {
-    if (!migrationState.chunks.length) return;
-    const report = `
+          try {
+            const results = await gemini.executeValidation(chunk.pythonSource, chunk.unitTest);
+
+            setMigrationState(prev => {
+              const newChunks = prev.chunks.map(c =>
+                c.id === chunk.id ? { ...c, testResults: results } : c
+              );
+              return { ...prev, chunks: newChunks };
+            });
+
+            const passCount = results.filter(r => r.status === 'PASSED').length;
+            addLog(`Test Run Result: ${passCount}/${results.length} PASSED`, passCount === results.length ? 'success' : 'error');
+          } catch (error) {
+            addLog(`Test Execution Failure: ${error}`, 'error');
+          } finally {
+            setIsRunningTests(false);
+          }
+        };
+
+        const downloadFile = (content: string, filename: string) => {
+          const blob = new Blob([content], { type: 'text/plain' });
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+          window.URL.revokeObjectURL(url);
+        };
+
+        const downloadArtifact = () => {
+          if (!migrationState.chunks.length) return;
+          const report = `
 LEGACY LINK AI: MIGRATION VERIFICATION ARTIFACT
 ==============================================
 Status: ${migrationState.status}
@@ -347,287 +347,285 @@ Python Source:
 ${c.pythonSource}
 `).join('\n')}
     `;
-    downloadFile(report, 'legacy-link-artifact.txt');
-  };
+          downloadFile(report, 'legacy-link-artifact.txt');
+        };
 
-  useEffect(() => {
-    if (migrationState.status === MigrationStatus.PROCESSING) {
-      const currentChunk = migrationState.chunks[migrationState.currentChunkIndex];
-      if (currentChunk && currentChunk.status === 'PENDING') {
-        processNextChunk();
-      }
-    }
-  }, [migrationState.status, migrationState.currentChunkIndex, processNextChunk]);
+        useEffect(() => {
+          if (migrationState.status === MigrationStatus.PROCESSING) {
+            const currentChunk = migrationState.chunks[migrationState.currentChunkIndex];
+            if (currentChunk && currentChunk.status === 'PENDING') {
+              processNextChunk();
+            }
+          }
+        }, [migrationState.status, migrationState.currentChunkIndex, processNextChunk]);
 
-  const selectedChunk = migrationState.chunks.find(c => c.id === selectedChunkId) ||
-    migrationState.chunks[migrationState.currentChunkIndex];
+        const selectedChunk = migrationState.chunks.find(c => c.id === selectedChunkId) ||
+          migrationState.chunks[migrationState.currentChunkIndex];
 
-  const progressPercentage = migrationState.totalLines > 0
-    ? Math.round((migrationState.processedLines / migrationState.totalLines) * 100)
-    : 0;
+        const progressPercentage = migrationState.totalLines > 0
+          ? Math.round((migrationState.processedLines / migrationState.totalLines) * 100)
+          : 0;
 
-  const completedChunks = migrationState.chunks.filter(c => c.status === 'DONE');
-  const overallCoverage = completedChunks.length > 0
-    ? Math.round(completedChunks.reduce((acc, c) => acc + (c.coverage || 0), 0) / completedChunks.length)
-    : 0;
+        const completedChunks = migrationState.chunks.filter(c => c.status === 'DONE');
+        const overallCoverage = completedChunks.length > 0
+          ? Math.round(completedChunks.reduce((acc, c) => acc + (c.coverage || 0), 0) / completedChunks.length)
+          : 0;
 
-  const isProcessing = migrationState.status === MigrationStatus.PROCESSING || migrationState.status === MigrationStatus.ANALYZING;
+        const isProcessing = migrationState.status === MigrationStatus.PROCESSING || migrationState.status === MigrationStatus.ANALYZING;
 
-  return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
-      <input
-        type="file"
-        ref={fileInputRef}
-        className="hidden"
-        multiple
-        accept=".cbl,.cob,.txt,.src"
-        onChange={handleFileUpload}
-      />
-
-      <header className="bg-slate-900 text-white p-4 border-b border-slate-700 sticky top-0 z-50 shadow-lg">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="bg-gradient-to-br from-indigo-500 to-sky-500 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
-              <BrainCircuit className="w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-black tracking-tight flex items-center space-x-2">
-                <span>LegacyLink AI</span>
-              </h1>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Autonomous Banking Modernization & Core Logic Archaeology</p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2 text-sm bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
-              <div className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'}`}></div>
-              <span className="capitalize">{migrationState.status.toLowerCase()}</span>
-            </div>
-            {isCompleted && (
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full border border-slate-700 transition-colors"
-              >
-                <RefreshCw className="w-4 h-4 text-slate-300" />
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-4 flex flex-col space-y-6">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-            <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-              <div className="flex items-center space-x-3 font-bold text-slate-700">
-                <FileCode className="w-5 h-5 text-indigo-600" />
-                <span className="text-sm">Mainframe Source</span>
-              </div>
-              <button
-                onClick={triggerFileUpload}
-                disabled={migrationState.status !== MigrationStatus.IDLE}
-                className="text-[10px] font-black text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 transition-all uppercase disabled:opacity-50"
-              >
-                Upload Sources
-              </button>
-            </div>
-            <textarea
-              value={inputCode}
-              onChange={(e) => setInputCode(e.target.value)}
-              className="w-full h-80 p-5 code-font text-sm bg-slate-900 text-indigo-100 focus:outline-none resize-none leading-relaxed"
-              placeholder="Paste COBOL source modules..."
-              disabled={migrationState.status !== MigrationStatus.IDLE}
+        return (
+          <div className="min-h-screen flex flex-col bg-slate-50">
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              multiple
+              accept=".cbl,.cob,.txt,.src"
+              onChange={handleFileUpload}
             />
-            <div className="p-4 bg-white">
-              <button
-                onClick={handleStartMigration}
-                disabled={migrationState.status !== MigrationStatus.IDLE || !inputCode}
-                className="w-full py-4 px-6 rounded-xl bg-indigo-600 text-white font-black flex items-center justify-center space-x-3 shadow-xl hover:scale-[1.01] active:scale-95 transition-all disabled:grayscale disabled:opacity-50"
-              >
-                <Zap className="w-5 h-5" />
-                <span className="uppercase tracking-widest text-sm">Launch Modernization Loop</span>
-              </button>
-            </div>
-          </div>
 
-          <div className="bg-[#0f172a] rounded-2xl shadow-xl border border-slate-700 overflow-hidden flex-1 flex flex-col min-h-[400px]">
-            <div className="p-5 border-b border-slate-800 bg-slate-900 flex items-center space-x-3 font-bold text-slate-300">
-              <Terminal className="w-5 h-5 text-indigo-400" />
-              <span className="text-sm">System Trace Log</span>
-            </div>
-            <div className="p-5 space-y-3 overflow-y-auto flex-1 bg-slate-900/50">
-              {logs.map((log, i) => (
-                <div key={i} className={`text-[11px] flex items-start space-x-3 p-2.5 rounded-lg border ${
-                  log.type === 'error' ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 
-                  log.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 
-                  log.type === 'thinking' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' : 
-                  'bg-slate-800 border-slate-700 text-slate-400'
-                }`}>
-                  {log.type === 'thinking' ? <BrainCircuit className="w-4 h-4 mt-0.5 animate-pulse" /> : <div className="w-1.5 h-1.5 rounded-full bg-current mt-1.5" />}
-                  <span className="flex-1 font-medium leading-relaxed">{log.msg}</span>
+            <header className="bg-slate-900 text-white p-4 border-b border-slate-700 sticky top-0 z-50 shadow-lg">
+              <div className="max-w-7xl mx-auto flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="bg-gradient-to-br from-indigo-500 to-sky-500 p-2.5 rounded-xl shadow-lg shadow-indigo-500/20">
+                    <BrainCircuit className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-black tracking-tight flex items-center space-x-2">
+                      <span>LegacyLink AI</span>
+                    </h1>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Autonomous Banking Modernization & Core Logic Archaeology</p>
+                  </div>
                 </div>
-              ))}
-              {logs.length === 0 && <p className="text-slate-500 text-xs text-center italic mt-10">Standby for COBOL ingestion...</p>}
-            </div>
-          </div>
-        </div>
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2 text-sm bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
+                    <div className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-500 animate-pulse'}`}></div>
+                    <span className="capitalize">{migrationState.status.toLowerCase()}</span>
+                  </div>
+                  {isCompleted && (
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full border border-slate-700 transition-colors"
+                    >
+                      <RefreshCw className="w-4 h-4 text-slate-300" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </header>
 
-        <div className="lg:col-span-8 flex flex-col space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl group">
-              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">System Health</p>
-              <div className="flex items-end justify-between">
-                <span className="text-2xl font-bold text-indigo-600">{progressPercentage}%</span>
-                <span className="text-xs text-slate-400">{migrationState.processedLines} LoC</span>
-              </div>
-              <div className="w-full bg-slate-100 h-2 rounded-full mt-2">
-                <div className={`h-full rounded-full transition-all duration-700 ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-600'}`} style={{ width: `${progressPercentage}%` }}></div>
-              </div>
-              <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Binary Parity Score</p>
-            </div>
+            <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
+              <div className="lg:col-span-4 flex flex-col space-y-6">
+                <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+                  <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                    <div className="flex items-center space-x-3 font-bold text-slate-700">
+                      <FileCode className="w-5 h-5 text-indigo-600" />
+                      <span className="text-sm">Mainframe Source</span>
+                    </div>
+                    <button
+                      onClick={triggerFileUpload}
+                      disabled={migrationState.status !== MigrationStatus.IDLE}
+                      className="text-[10px] font-black text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 transition-all uppercase disabled:opacity-50"
+                    >
+                      Upload Sources
+                    </button>
+                  </div>
+                  <textarea
+                    value={inputCode}
+                    onChange={(e) => setInputCode(e.target.value)}
+                    className="w-full h-80 p-5 code-font text-sm bg-slate-900 text-indigo-100 focus:outline-none resize-none leading-relaxed"
+                    placeholder="Paste COBOL source modules..."
+                    disabled={migrationState.status !== MigrationStatus.IDLE}
+                  />
+                  <div className="p-4 bg-white">
+                    <button
+                      onClick={handleStartMigration}
+                      disabled={migrationState.status !== MigrationStatus.IDLE || !inputCode}
+                      className="w-full py-4 px-6 rounded-xl bg-indigo-600 text-white font-black flex items-center justify-center space-x-3 shadow-xl hover:scale-[1.01] active:scale-95 transition-all disabled:grayscale disabled:opacity-50"
+                    >
+                      <Zap className="w-5 h-5" />
+                      <span className="uppercase tracking-widest text-sm">Launch Modernization Loop</span>
+                    </button>
+                  </div>
+                </div>
 
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl">
-              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Verified Context</p>
-              <div className="flex items-end justify-between">
-                <span className="text-3xl font-black text-sky-600">
-                  {migrationState.chunks.filter(c => c.groundingSources).length}/{migrationState.chunks.length}
-                </span>
-                <Globe className="w-5 h-5 text-sky-500 mb-1" />
-              </div>
-              <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Grounded via Search</p>
-            </div>
-
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl">
-              <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Logic Recovered</p>
-              <div className="flex items-center space-x-3">
-                <CheckCircle className="w-5 h-5 text-emerald-500" />
-                <span className="text-2xl font-black text-slate-700">
-                  {migrationState.chunks.filter(c => c.status === 'DONE').length}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Autonomous Modules</p>
-            </div>
-
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <p className="text-xs text-slate-400 font-medium uppercase mb-1 tracking-tighter">Data Compliance</p>
-              <div className="flex items-center space-x-2">
-                <Binary className="w-5 h-5 text-emerald-500" />
-                <span className="text-sm font-bold text-slate-700 truncate">
-                  {isCompleted ? 'EBCDIC Resolved' : 'EBCDIC Analysis'}
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Thought Tokens</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 flex-1">
-            <div className="md:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
-              <div className="p-5 border-b border-slate-100 bg-slate-50 text-xs font-black text-slate-700 flex justify-between items-center uppercase tracking-widest">
-                <span>Migration Queue</span>
-                <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg text-[9px]">{migrationState.chunks.length} Units</span>
-              </div>
-              <div className="overflow-y-auto flex-1 bg-slate-50/20">
-                {migrationState.chunks.map((chunk, idx) => (
-                  <button
-                    key={chunk.id}
-                    onClick={() => setSelectedChunkId(chunk.id)}
-                    className={`w-full p-5 flex items-center justify-between border-b border-slate-50 transition-all text-left group
-                      ${selectedChunkId === chunk.id ? 'bg-indigo-50 border-l-4 border-l-indigo-600' : 'hover:bg-slate-50'}`}
-                  >
-                    <div className="flex items-center space-x-4">
-                      {chunk.status === 'DONE' ? (
-                        <CheckCircle className={`w-5 h-5 ${chunk.testResults ? 'text-emerald-500' : 'text-slate-300'}`} />
-                      ) : (
-                        <div className="w-5 h-5 rounded-full border-2 border-slate-200 animate-pulse bg-slate-100" />
-                      )}
-                      <div className="truncate">
-                        <p className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight">{chunk.name}</p>
-                        <div className="flex items-center space-x-2 mt-0.5">
-                          <span className="text-[9px] text-slate-400">Parity: {chunk.coverage || 0}%</span>
-                          {chunk.status === 'DONE' && <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>}
-                        </div>
+                <div className="bg-[#0f172a] rounded-2xl shadow-xl border border-slate-700 overflow-hidden flex-1 flex flex-col min-h-[400px]">
+                  <div className="p-5 border-b border-slate-800 bg-slate-900 flex items-center space-x-3 font-bold text-slate-300">
+                    <Terminal className="w-5 h-5 text-indigo-400" />
+                    <span className="text-sm">System Trace Log</span>
+                  </div>
+                  <div className="p-5 space-y-3 overflow-y-auto flex-1 bg-slate-900/50">
+                    {logs.map((log, i) => (
+                      <div key={i} className={`text-[11px] flex items-start space-x-3 p-2.5 rounded-lg border ${log.type === 'error' ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' :
+                          log.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                            log.type === 'thinking' ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400' :
+                              'bg-slate-800 border-slate-700 text-slate-400'
+                        }`}>
+                        {log.type === 'thinking' ? <BrainCircuit className="w-4 h-4 mt-0.5 animate-pulse" /> : <div className="w-1.5 h-1.5 rounded-full bg-current mt-1.5" />}
+                        <span className="flex-1 font-medium leading-relaxed">{log.msg}</span>
                       </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-400" />
-                  </button>
-                ))}
+                    ))}
+                    {logs.length === 0 && <p className="text-slate-500 text-xs text-center italic mt-10">Standby for COBOL ingestion...</p>}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            <div className="md:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-xl flex flex-col overflow-hidden">
-              {selectedChunk ? (
-                <>
-                  <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50 space-x-4 overflow-x-auto no-scrollbar">
-                    <div className="flex items-center space-x-1.5 bg-white px-1.5 py-1 rounded-lg border border-slate-200 shadow-sm flex-shrink-0">
-                      <button
-                        onClick={() => setViewMode('functional')}
-                        className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'functional' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                      >
-                        <BookOpen className="w-3 h-3" />
-                        <span className="whitespace-nowrap">Functional Blueprint</span>
-                      </button>
-                      <button
-                        onClick={() => setViewMode('technical')}
-                        className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'technical' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                      >
-                        <Cpu className="w-3 h-3" />
-                        <span className="whitespace-nowrap">Modern implementation</span>
-                      </button>
-                      <button
-                        onClick={() => setViewMode('validation')}
-                        className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'validation' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
-                      >
-                        <FlaskConical className="w-3 h-3" />
-                        <span className="whitespace-nowrap">Behavioral Tests</span>
-                      </button>
+              <div className="lg:col-span-8 flex flex-col space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl group">
+                    <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">System Health</p>
+                    <div className="flex items-end justify-between">
+                      <span className="text-2xl font-bold text-indigo-600">{progressPercentage}%</span>
+                      <span className="text-xs text-slate-400">{migrationState.processedLines} LoC</span>
                     </div>
-                    {selectedChunk.status === 'DONE' && (
-                      <button
-                        onClick={() => handleExport(selectedChunk)}
-                        className="flex items-center space-x-2 text-[10px] font-bold bg-slate-800 text-white px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-md flex-shrink-0"
-                      >
-                        <Download className="w-3 h-3" />
-                        <span className="hidden xl:inline whitespace-nowrap">Export Documentation</span>
-                        <span className="xl:hidden whitespace-nowrap">Export</span>
-                      </button>
-                    )}
+                    <div className="w-full bg-slate-100 h-2 rounded-full mt-2">
+                      <div className={`h-full rounded-full transition-all duration-700 ${isCompleted ? 'bg-emerald-500' : 'bg-indigo-600'}`} style={{ width: `${progressPercentage}%` }}></div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Binary Parity Score</p>
+                  </div>
 
-                  <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                    <div className="flex items-center space-x-2 bg-white px-2 py-1.5 rounded-xl border border-slate-200 shadow-sm overflow-x-auto no-scrollbar">
-                      {[
-                        { id: 'functional', label: 'Archaeology', icon: BookOpen },
-                        { id: 'technical', label: 'Python Impl', icon: Cpu },
-                        { id: 'validation', label: 'Verification', icon: FlaskConical }
-                      ].map(mode => (
-                        <button 
-                          key={mode.id}
-                          onClick={() => setViewMode(mode.id as any)}
-                          className={`flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-lg transition-all ${
-                            viewMode === mode.id ? 'bg-[#0f172a] text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'
-                          }`}
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl">
+                    <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Verified Context</p>
+                    <div className="flex items-end justify-between">
+                      <span className="text-3xl font-black text-sky-600">
+                        {migrationState.chunks.filter(c => c.groundingSources).length}/{migrationState.chunks.length}
+                      </span>
+                      <Globe className="w-5 h-5 text-sky-500 mb-1" />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Grounded via Search</p>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xl">
+                    <p className="text-[10px] text-slate-400 font-black uppercase mb-2 tracking-tighter">Logic Recovered</p>
+                    <div className="flex items-center space-x-3">
+                      <CheckCircle className="w-5 h-5 text-emerald-500" />
+                      <span className="text-2xl font-black text-slate-700">
+                        {migrationState.chunks.filter(c => c.status === 'DONE').length}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Autonomous Modules</p>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <p className="text-xs text-slate-400 font-medium uppercase mb-1 tracking-tighter">Data Compliance</p>
+                    <div className="flex items-center space-x-2">
+                      <Binary className="w-5 h-5 text-emerald-500" />
+                      <span className="text-sm font-bold text-slate-700 truncate">
+                        {isCompleted ? 'EBCDIC Resolved' : 'EBCDIC Analysis'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2 font-bold uppercase">Thought Tokens</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-8 flex-1">
+                  <div className="md:col-span-4 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden flex flex-col">
+                    <div className="p-5 border-b border-slate-100 bg-slate-50 text-xs font-black text-slate-700 flex justify-between items-center uppercase tracking-widest">
+                      <span>Migration Queue</span>
+                      <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-lg text-[9px]">{migrationState.chunks.length} Units</span>
+                    </div>
+                    <div className="overflow-y-auto flex-1 bg-slate-50/20">
+                      {migrationState.chunks.map((chunk, idx) => (
+                        <button
+                          key={chunk.id}
+                          onClick={() => setSelectedChunkId(chunk.id)}
+                          className={`w-full p-5 flex items-center justify-between border-b border-slate-50 transition-all text-left group
+                      ${selectedChunkId === chunk.id ? 'bg-indigo-50 border-l-4 border-l-indigo-600' : 'hover:bg-slate-50'}`}
                         >
-                          <mode.icon className="w-3.5 h-3.5" />
-                          <span>{mode.label}</span>
+                          <div className="flex items-center space-x-4">
+                            {chunk.status === 'DONE' ? (
+                              <CheckCircle className={`w-5 h-5 ${chunk.testResults ? 'text-emerald-500' : 'text-slate-300'}`} />
+                            ) : (
+                              <div className="w-5 h-5 rounded-full border-2 border-slate-200 animate-pulse bg-slate-100" />
+                            )}
+                            <div className="truncate">
+                              <p className="text-xs font-bold text-slate-700 truncate uppercase tracking-tight">{chunk.name}</p>
+                              <div className="flex items-center space-x-2 mt-0.5">
+                                <span className="text-[9px] text-slate-400">Parity: {chunk.coverage || 0}%</span>
+                                {chunk.status === 'DONE' && <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>}
+                              </div>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-400" />
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto bg-white p-8">
-                    {viewMode === 'functional' && (
-                      <div className="p-6 space-y-6">
-                        <div className="flex items-center justify-between border-b border-indigo-50 pb-2 mb-4">
-                          <div className="flex items-center space-x-2 text-indigo-600">
-                            <ScrollText className="w-5 h-5" />
-                            <h4 className="font-black text-sm uppercase tracking-widest">Logic Archaeology</h4>
+                  <div className="md:col-span-8 bg-white rounded-2xl border border-slate-200 shadow-xl flex flex-col overflow-hidden">
+                    {selectedChunk ? (
+                <>
+                        <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50 space-x-4 overflow-x-auto no-scrollbar">
+                          <div className="flex items-center space-x-1.5 bg-white px-1.5 py-1 rounded-lg border border-slate-200 shadow-sm flex-shrink-0">
+                            <button
+                              onClick={() => setViewMode('functional')}
+                              className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'functional' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                            >
+                              <BookOpen className="w-3 h-3" />
+                              <span className="whitespace-nowrap">Functional Blueprint</span>
+                            </button>
+                            <button
+                              onClick={() => setViewMode('technical')}
+                              className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'technical' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                            >
+                              <Cpu className="w-3 h-3" />
+                              <span className="whitespace-nowrap">Modern implementation</span>
+                            </button>
+                            <button
+                              onClick={() => setViewMode('validation')}
+                              className={`flex items-center space-x-1.5 text-[10px] font-bold transition-all px-2.5 py-1.5 rounded-md ${viewMode === 'validation' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-50'}`}
+                            >
+                              <FlaskConical className="w-3 h-3" />
+                              <span className="whitespace-nowrap">Behavioral Tests</span>
+                            </button>
                           </div>
-                          <div className="flex items-center space-x-3">
-                            <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><Binary className="w-3 h-3" /> <span>EBCDIC AWARE</span></span>
-                            <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><HardDrive className="w-3 h-3" /> <span>VSAM RESOLVED</span></span>
-                            <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-500"><ShieldAlert className="w-3 h-3" /> <span>ERROR RESILIENT</span></span>
-                          </div>
-                        </div>
+                          {selectedChunk.status === 'DONE' && (
+                            <button
+                              onClick={() => handleExport(selectedChunk)}
+                              className="flex items-center space-x-2 text-[10px] font-bold bg-slate-800 text-white px-3 py-2 rounded-lg hover:bg-slate-700 transition-colors shadow-md flex-shrink-0"
+                            >
+                              <Download className="w-3 h-3" />
+                              <span className="hidden xl:inline whitespace-nowrap">Export Documentation</span>
+                              <span className="xl:hidden whitespace-nowrap">Export</span>
+                            </button>
+                          )}
 
-                        {selectedChunk.businessRules ? (
+                          <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                            <div className="flex items-center space-x-2 bg-white px-2 py-1.5 rounded-xl border border-slate-200 shadow-sm overflow-x-auto no-scrollbar">
+                              {[
+                                { id: 'functional', label: 'Archaeology', icon: BookOpen },
+                                { id: 'technical', label: 'Python Impl', icon: Cpu },
+                                { id: 'validation', label: 'Verification', icon: FlaskConical }
+                              ].map(mode => (
+                                <button
+                                  key={mode.id}
+                                  onClick={() => setViewMode(mode.id as any)}
+                                  className={`flex items-center space-x-2 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-lg transition-all ${viewMode === mode.id ? 'bg-[#0f172a] text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                >
+                                  <mode.icon className="w-3.5 h-3.5" />
+                                  <span>{mode.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex-1 overflow-y-auto bg-white p-8">
+                            {viewMode === 'functional' && (
+                              <div className="p-6 space-y-6">
+                                <div className="flex items-center justify-between border-b border-indigo-50 pb-2 mb-4">
+                                  <div className="flex items-center space-x-2 text-indigo-600">
+                                    <ScrollText className="w-5 h-5" />
+                                    <h4 className="font-black text-sm uppercase tracking-widest">Logic Archaeology</h4>
+                                  </div>
+                                  <div className="flex items-center space-x-3">
+                                    <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><Binary className="w-3 h-3" /> <span>EBCDIC AWARE</span></span>
+                                    <span className="flex items-center space-x-1 text-[9px] font-bold text-slate-400"><HardDrive className="w-3 h-3" /> <span>VSAM RESOLVED</span></span>
+                                    <span className="flex items-center space-x-1 text-[9px] font-bold text-emerald-500"><ShieldAlert className="w-3 h-3" /> <span>ERROR RESILIENT</span></span>
+                                  </div>
+                                </div>
+
+                                {selectedChunk.businessRules ? (
                           <div className="space-y-8">
                             <div className="prose prose-indigo max-w-none">
                               <label className="text-[10px] font-black text-slate-400 uppercase mb-3 block tracking-widest">Core Business Requirements</label>
@@ -859,20 +857,20 @@ ${c.pythonSource}
         </div>
       </main>
 
-      <footer className="bg-white border-t border-slate-200 py-3 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <div className="max-w-7xl mx-auto flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-widest font-bold">
-          <div className="flex items-center space-x-8">
-            <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span><span>Data Integrity Verified</span></span>
-            <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span><span>Blueprint Ready</span></span>
-            <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span>Mainframe Syntax Decoupled</span></span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span>Gemini 3 Pro Modernization Stack</span>
-          </div>
-        </div>
-      </footer>
-    </div>
-  );
+                          <footer className="bg-white border-t border-slate-200 py-3 px-6 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                            <div className="max-w-7xl mx-auto flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-widest font-bold">
+                              <div className="flex items-center space-x-8">
+                                <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span><span>Data Integrity Verified</span></span>
+                                <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span><span>Blueprint Ready</span></span>
+                                <span className="flex items-center space-x-2"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span><span>Mainframe Syntax Decoupled</span></span>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <span>Gemini 3 Pro Modernization Stack</span>
+                              </div>
+                            </div>
+                          </footer>
+                        </div>
+                        );
 };
 
-export default App;
+                        export default App;
