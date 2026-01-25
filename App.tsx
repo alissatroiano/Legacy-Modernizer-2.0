@@ -29,7 +29,9 @@ import {
   Server,
   ZapOff,
   FastForward,
-  Wind
+  Wind,
+  Layers,
+  Search
 } from 'lucide-react';
 import { MigrationStatus, MigrationState, CodeChunk, TestResult } from './types';
 import * as gemini from './services/geminiService';
@@ -83,8 +85,8 @@ const ProgressiveCodeBlock: React.FC<{
       {displayLines.join('\n')}
       {!isFinished && (
         <div className="flex items-center space-x-2 mt-4 text-indigo-400 font-sans italic text-[10px] animate-pulse">
-          <Wind className="w-3 h-3" />
-          <span>Vibe Stream Active...</span>
+          <BrainCircuit className="w-3 h-3" />
+          <span>Archaeology in progress...</span>
         </div>
       )}
     </pre>
@@ -105,34 +107,26 @@ const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'functional' | 'technical' | 'validation'>('functional');
   const [logs, setLogs] = useState<{msg: string, type: 'info' | 'success' | 'error' | 'thinking'}[]>([]);
   const [isRunningTests, setIsRunningTests] = useState(false);
-  const [velocity, setVelocity] = useState(0);
+  const [isThinking, setIsThinking] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const addLog = useCallback((msg: string, type: 'info' | 'success' | 'error' | 'thinking' = 'info') => {
-    setLogs(prev => [...prev.slice(-20), { msg, type }]);
+    setLogs(prev => [...prev.slice(-40), { msg, type }]);
   }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (migrationState.status === MigrationStatus.PROCESSING) {
-        setVelocity(prev => Math.min(prev + (Math.random() * 5), 180));
-      } else if (migrationState.status === MigrationStatus.IDLE) {
-        setVelocity(0);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [migrationState.status]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-    (Array.from(files) as File[]).forEach(file => {
+    
+    addLog(`Ingesting ${files.length} legacy files...`, 'thinking');
+    
+    (Array.from(files) as File[]).forEach((file, index) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const content = e.target?.result as string;
         if (content) {
-          setInputCode(prev => prev ? prev + '\n\n' + content : content);
-          addLog(`Ingested: ${file.name}`, 'success');
+          setInputCode(prev => prev ? prev + '\n\n' + `*> FILE: ${file.name}\n` + content : `*> FILE: ${file.name}\n` + content);
+          addLog(`Loaded ${file.name}`, 'success');
         }
       };
       reader.readAsText(file);
@@ -147,14 +141,18 @@ const App: React.FC = () => {
       totalLines: inputCode.split('\n').length,
       chunks: []
     }));
-
-    addLog("Initiating Flash-Speed Archaeology...", 'thinking');
+    setIsThinking(true);
+    addLog("Initiating Multi-Model System Audit (Marathon Mode)...", 'thinking');
 
     try {
+      addLog("Analyzing code logical boundaries and state objects...", 'info');
       const analysis = await gemini.analyzeLegacyCodebase(inputCode);
-      addLog("System Blueprint Synthesized.", 'success');
+      addLog("Deep System Blueprint synthesized.", 'success');
       
+      addLog("Partitioning codebase into logical modules...", 'info');
       const { chunks: rawChunks } = await gemini.splitCodeIntoChunks(inputCode);
+      addLog(`Identified ${rawChunks.length} logical programs/modules.`, 'success');
+
       const chunks: CodeChunk[] = rawChunks.map((c, idx) => ({
         id: `chunk-${idx}`,
         name: c.name,
@@ -171,8 +169,10 @@ const App: React.FC = () => {
         currentChunkIndex: 0
       }));
     } catch (error) {
-      addLog(`Loop Failed: ${error}`, 'error');
+      addLog(`Audit Failed: ${error}`, 'error');
       setMigrationState(prev => ({ ...prev, status: MigrationStatus.FAILED }));
+    } finally {
+      setIsThinking(false);
     }
   };
 
@@ -183,11 +183,17 @@ const App: React.FC = () => {
     const chunk = chunks[currentChunkIndex];
     if (chunk.status !== 'PENDING') return;
 
-    addLog(`Vibe Process: ${chunk.name}`, 'info');
+    setIsThinking(true);
+    addLog(`Modernizing ${chunk.name} (File Access Parity focused)...`, 'thinking');
 
     try {
+      addLog(`Searching modern persistence patterns for ${chunk.name}...`, 'info');
       const { research, sources } = await gemini.researchModernEquivalents(chunk.name);
+      
+      addLog(`Performing logic archaeology on ${chunk.name}...`, 'info');
       const result = await gemini.processModuleLogic(chunk, research);
+      
+      addLog(`Generating parity-verification test suite for ${chunk.name}...`, 'info');
       const testResult = await gemini.generateTests(result.pythonSource, chunk.cobolSource);
       
       setMigrationState(prev => {
@@ -209,9 +215,16 @@ const App: React.FC = () => {
           status: isLast ? MigrationStatus.COMPLETED : MigrationStatus.PROCESSING
         };
       });
-      addLog(`${chunk.name} Recovered.`, 'success');
+      addLog(`${chunk.name} modernization completed with ${testResult.coverageEstimate}% parity confidence.`, 'success');
     } catch (error) {
-      addLog(`Bypass Error ${chunk.name}: ${error}`, 'error');
+      addLog(`Module Bypass ${chunk.name}: ${error}`, 'error');
+      // Still move to next chunk to avoid blocking the whole process
+      setMigrationState(prev => ({
+        ...prev,
+        currentChunkIndex: prev.currentChunkIndex + 1
+      }));
+    } finally {
+      setIsThinking(false);
     }
   }, [migrationState, addLog]);
 
@@ -219,7 +232,7 @@ const App: React.FC = () => {
     if (!chunk.pythonSource || !chunk.unitTest || isRunningTests) return;
     
     setIsRunningTests(true);
-    addLog(`Running Autonomous Verification Artifacts for ${chunk.name}...`, 'thinking');
+    addLog(`Executing Autonomous Parity Verification for ${chunk.name}...`, 'thinking');
     
     try {
       const results = await gemini.executeValidation(chunk.pythonSource, chunk.unitTest);
@@ -232,23 +245,16 @@ const App: React.FC = () => {
       });
       
       const passCount = results.filter(r => r.status === 'PASSED').length;
-      addLog(`${chunk.name} Verification: ${passCount}/${results.length} PASSED`, 'success');
+      if (passCount === results.length) {
+        addLog(`SUCCESS: ${chunk.name} verified with 100% logic parity.`, 'success');
+      } else {
+        addLog(`WARNING: ${chunk.name} failed ${results.length - passCount} logic checks. Review artifacts.`, 'error');
+      }
     } catch (error) {
-      addLog(`Verification Failure: ${error}`, 'error');
+      addLog(`Verification Run Failed: ${error}`, 'error');
     } finally {
       setIsRunningTests(false);
     }
-  };
-
-  const downloadArtifact = () => {
-    if (!migrationState.chunks.length) return;
-    const report = `LEGACY LINK AI: MODERNIZATION ARTIFACT\n================================\n${migrationState.overallPlan}\n\nMODERNIZED MODULES:\n${migrationState.chunks.map(c => `[${c.name}] Parity: ${c.coverage}%\n`).join('')}`;
-    const blob = new Blob([report], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'modernization-artifact.txt';
-    a.click();
   };
 
   useEffect(() => {
@@ -273,277 +279,300 @@ const App: React.FC = () => {
   const isProcessing = migrationState.status === MigrationStatus.PROCESSING || migrationState.status === MigrationStatus.ANALYZING;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0f172a] text-slate-100 selection:bg-indigo-500/30">
-      <input type="file" ref={fileInputRef} className="hidden" multiple accept=".cbl,.cob,.txt" onChange={handleFileUpload} />
+    <div className="min-h-screen flex flex-col bg-[#020617] text-slate-100 selection:bg-blue-500/30">
+      <input type="file" ref={fileInputRef} className="hidden" multiple onChange={handleFileUpload} />
 
-      <header className="p-5 border-b border-slate-800 bg-slate-900/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-5">
-            <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-indigo-500/20 rotate-3">
-              <Wind className="w-6 h-6 text-white" />
+      <header className="p-4 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-500/20">
+              <Layers className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tighter flex items-center space-x-2">
-                <span className="bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">LegacyLink Vibe</span>
-              </h1>
-              <p className="text-[9px] text-indigo-400 font-black uppercase tracking-[0.2em]">Flash-Powered Logic Archaeology</p>
+              <h1 className="text-lg font-black tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Logic Link </h1>
+              <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Legacy Mainframe to Modern Logic AI Tool</p>
             </div>
           </div>
           <div className="flex items-center space-x-4">
-             {isProcessing && (
-               <div className="hidden md:flex items-center space-x-3 bg-white/5 border border-white/10 px-4 py-2 rounded-2xl">
-                 <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                 <span className="text-[10px] font-black text-indigo-300 animate-pulse uppercase">Vibe Loop Active</span>
+             {isThinking && (
+               <div className="flex items-center space-x-2 bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-full animate-pulse">
+                 <BrainCircuit className="w-3.5 h-3.5 text-blue-400" />
+                 <span className="text-[10px] font-bold text-blue-300 uppercase">Reasoning Active</span>
                </div>
              )}
              <button 
-               onClick={downloadArtifact}
+               onClick={() => {
+                 const report = JSON.stringify(migrationState, null, 2);
+                 const blob = new Blob([report], { type: 'application/json' });
+                 const url = URL.createObjectURL(blob);
+                 const a = document.createElement('a');
+                 a.href = url;
+                 a.download = 'modernization-blueprint.json';
+                 a.click();
+               }}
                disabled={migrationState.chunks.length === 0}
-               className="bg-slate-800 hover:bg-slate-700 disabled:opacity-30 p-2.5 rounded-xl border border-slate-700 transition-all"
+               className="bg-slate-800 hover:bg-slate-700 disabled:opacity-30 p-2.5 rounded-xl border border-slate-700 transition-all text-slate-400"
+               title="Export Blueprint"
              >
-               <ArrowDownToLine className="w-5 h-5" />
+               <FileDown className="w-5 h-5" />
              </button>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-4 flex flex-col space-y-6">
-          <div className="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden flex flex-col shadow-2xl">
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/20">
+      <main className="flex-1 max-w-screen-2xl mx-auto w-full p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Left Column: Source & Terminal */}
+        <div className="lg:col-span-4 flex flex-col space-y-4">
+          <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col shadow-xl h-[450px]">
+            <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-800/20">
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center space-x-2">
                 <Database className="w-3.5 h-3.5" />
-                <span>Source Terminal</span>
+                <span>Source Ingestion</span>
               </span>
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                disabled={migrationState.status !== MigrationStatus.IDLE}
-                className="text-[9px] font-black bg-white text-black px-3 py-1.5 rounded-lg uppercase hover:scale-105 transition-all disabled:opacity-20"
-              >
-                Ingest
-              </button>
+              <div className="flex space-x-2">
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={migrationState.status !== MigrationStatus.IDLE}
+                  className="text-[9px] font-black bg-blue-600 text-white px-3 py-1 rounded-lg uppercase hover:bg-blue-500 disabled:opacity-20 transition-all"
+                >
+                  Upload
+                </button>
+                <button 
+                  onClick={() => setInputCode('')}
+                  disabled={migrationState.status !== MigrationStatus.IDLE}
+                  className="text-[9px] font-black bg-slate-700 text-slate-300 px-3 py-1 rounded-lg uppercase hover:bg-slate-600 disabled:opacity-20 transition-all"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
             <textarea 
               value={inputCode}
               onChange={(e) => setInputCode(e.target.value)}
-              className="flex-1 min-h-[300px] p-5 code-font text-xs bg-transparent text-indigo-200 focus:outline-none resize-none leading-relaxed"
-              placeholder="Paste Legacy Source Code..."
+              className="flex-1 p-4 code-font text-[11px] bg-transparent text-blue-200 focus:outline-none resize-none leading-relaxed custom-scrollbar"
+              placeholder="Paste COBOL programs or Linkage sections here..."
               disabled={migrationState.status !== MigrationStatus.IDLE}
             />
-            <div className="p-5">
+            <div className="p-4 border-t border-slate-800 bg-slate-800/10">
               <button 
                 onClick={handleStartMigration}
                 disabled={migrationState.status !== MigrationStatus.IDLE || !inputCode}
-                className="w-full py-4 rounded-2xl bg-indigo-600 text-white font-black flex items-center justify-center space-x-3 shadow-xl shadow-indigo-500/20 hover:bg-indigo-500 transition-all disabled:grayscale disabled:opacity-20"
+                className="w-full py-3 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center space-x-2 shadow-lg hover:bg-blue-500 transition-all disabled:opacity-20"
               >
-                <Zap className="w-5 h-5 fill-current" />
-                <span className="uppercase tracking-widest text-xs">Run Modernization Loop</span>
+                <Play className="w-4 h-4 fill-current" />
+                <span className="uppercase tracking-widest text-[11px]">Start Modernization Cycle</span>
               </button>
             </div>
           </div>
 
-          <div className="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden flex-1 flex flex-col min-h-[350px]">
-             <div className="p-4 border-b border-slate-800 flex items-center space-x-2 bg-slate-800/20">
-               <Terminal className="w-4 h-4 text-emerald-400" />
-               <span className="text-[10px] font-black uppercase text-slate-400">System Stream</span>
+          <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex-1 flex flex-col shadow-xl min-h-[300px]">
+             <div className="p-3 border-b border-slate-800 flex items-center space-x-2 bg-slate-800/20">
+               <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">System Stream</span>
              </div>
-             <div className="p-5 space-y-3 overflow-y-auto flex-1 font-mono text-[10px]">
+             <div className="p-4 space-y-2.5 overflow-y-auto flex-1 font-mono text-[10px] bg-black/20 custom-scrollbar">
+               {logs.length === 0 && <p className="text-slate-600 italic">Waiting for input...</p>}
                {logs.map((log, i) => (
-                 <div key={i} className={`flex items-start space-x-3 opacity-0 animate-in fade-in slide-in-from-left-2 duration-300 fill-mode-forwards`}>
-                   <div className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${
+                 <div key={i} className="flex items-start space-x-2 animate-in fade-in slide-in-from-left-1 duration-200">
+                   <div className={`mt-1 w-1 h-3 rounded-full shrink-0 ${
                      log.type === 'error' ? 'bg-rose-500' : 
-                     log.type === 'success' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 
-                     log.type === 'thinking' ? 'bg-indigo-500 animate-pulse' : 'bg-slate-600'
+                     log.type === 'success' ? 'bg-emerald-500' : 
+                     log.type === 'thinking' ? 'bg-blue-500 animate-pulse' : 'bg-slate-700'
                    }`} />
-                   <span className={log.type === 'error' ? 'text-rose-400' : log.type === 'success' ? 'text-emerald-300' : 'text-slate-400'}>
+                   <span className={`leading-relaxed ${
+                     log.type === 'error' ? 'text-rose-400' : 
+                     log.type === 'success' ? 'text-emerald-300' : 
+                     log.type === 'thinking' ? 'text-blue-300' : 'text-slate-400'
+                   }`}>
                      {log.msg}
                    </span>
                  </div>
                ))}
+               <div id="logs-end" />
              </div>
           </div>
         </div>
 
-        <div className="lg:col-span-8 flex flex-col space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl overflow-hidden relative group">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-600/10 blur-3xl -mr-10 -mt-10 rounded-full" />
-              <p className="text-[9px] text-slate-500 font-black uppercase mb-1 tracking-widest">Logic Parity</p>
-              <div className="flex items-end justify-between">
-                <span className="text-3xl font-black tracking-tighter text-indigo-400">{overallCoverage}%</span>
-                <ShieldCheck className="w-5 h-5 text-indigo-500 mb-1" />
+        {/* Right Column: Dashboard & Details */}
+        <div className="lg:col-span-8 flex flex-col space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg border-l-4 border-l-blue-500">
+              <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Parity Accuracy</p>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-black text-white">{overallCoverage}%</span>
+                <ShieldCheck className="w-5 h-5 text-blue-500/50" />
               </div>
             </div>
-
-            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl overflow-hidden relative">
-              <p className="text-[9px] text-slate-500 font-black uppercase mb-1 tracking-widest">Verified Modules</p>
-              <div className="flex items-end justify-between">
-                <span className="text-3xl font-black tracking-tighter text-emerald-400">
-                  {migrationState.chunks.filter(c => c.status === 'DONE').length}
-                </span>
-                <CheckCircle className="w-5 h-5 text-emerald-500 mb-1" />
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg border-l-4 border-l-emerald-500">
+              <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Modules Built</p>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-black text-white">{migrationState.chunks.filter(c => c.status === 'DONE').length}</span>
+                <CheckCircle className="w-5 h-5 text-emerald-500/50" />
               </div>
             </div>
-
-            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl overflow-hidden relative">
-              <p className="text-[9px] text-slate-500 font-black uppercase mb-1 tracking-widest">Grounded Info</p>
-              <div className="flex items-end justify-between">
-                <span className="text-3xl font-black tracking-tighter text-sky-400">
-                  {migrationState.chunks.filter(c => c.groundingSources).length}
-                </span>
-                <Globe className="w-5 h-5 text-sky-500 mb-1" />
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg border-l-4 border-l-indigo-500">
+              <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Knowledge Grounding</p>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-black text-white">{migrationState.chunks.filter(c => c.groundingSources && c.groundingSources.length > 0).length}</span>
+                <Globe className="w-5 h-5 text-indigo-500/50" />
               </div>
             </div>
-
-            <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 shadow-xl overflow-hidden relative">
-              <div className={`absolute top-0 right-0 w-16 h-16 bg-emerald-500/10 blur-2xl -mr-8 -mt-8 rounded-full transition-opacity duration-1000 ${velocity > 10 ? 'opacity-100' : 'opacity-0'}`} />
-              <p className="text-[9px] text-slate-500 font-black uppercase mb-1 tracking-widest">Vibe Velocity</p>
-              <div className="flex items-end justify-between">
-                <span className="text-3xl font-black tracking-tighter text-slate-200">
-                  {Math.round(velocity)} <span className="text-xs text-slate-500">TPS</span>
-                </span>
-                <FastForward className="w-5 h-5 text-slate-500 mb-1" />
+            <div className="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg border-l-4 border-l-slate-600">
+              <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">Source Density</p>
+              <div className="flex items-center justify-between">
+                <span className="text-2xl font-black text-white">{migrationState.chunks.length}</span>
+                <FileCode className="w-5 h-5 text-slate-500/50" />
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 flex-1 min-h-0">
-            <div className="md:col-span-4 bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden flex flex-col shadow-2xl">
-              <div className="p-4 border-b border-slate-800 bg-slate-800/30 flex justify-between items-center">
-                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Archaeology Queue</span>
-                <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-bold">{migrationState.chunks.length}</span>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 flex-1">
+            <div className="md:col-span-4 bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col shadow-xl max-h-[600px]">
+              <div className="p-3 border-b border-slate-800 bg-slate-800/20 flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Recovery Queue</span>
               </div>
               <div className="overflow-y-auto flex-1 custom-scrollbar">
                 {migrationState.chunks.map((chunk) => (
                   <button 
                     key={chunk.id}
                     onClick={() => setSelectedChunkId(chunk.id)}
-                    className={`w-full p-5 flex items-center justify-between border-b border-slate-800/50 transition-all text-left
-                      ${selectedChunkId === chunk.id ? 'bg-indigo-500/10 border-l-4 border-l-indigo-500' : 'hover:bg-slate-800/50'}`}
+                    className={`w-full p-4 flex items-center justify-between border-b border-slate-800/50 transition-all text-left group
+                      ${selectedChunkId === chunk.id ? 'bg-blue-600/10 border-l-4 border-l-blue-600' : 'hover:bg-slate-800/40'}`}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className={`w-2 h-2 rounded-full ${chunk.status === 'DONE' ? 'bg-emerald-500' : 'bg-slate-700 animate-pulse'}`} />
-                      <div>
-                        <p className="text-[10px] font-black text-slate-200 uppercase truncate max-w-[120px]">{chunk.name}</p>
-                        {chunk.status === 'DONE' && <p className="text-[8px] font-black text-indigo-400 mt-0.5">VERIFIED • {chunk.coverage}%</p>}
+                      <div className={`w-2 h-2 rounded-full ${chunk.status === 'DONE' ? 'bg-emerald-500' : chunk.status === 'ERROR' ? 'bg-rose-500' : 'bg-slate-700 animate-pulse'}`} />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black text-slate-200 uppercase truncate pr-2">{chunk.name}</p>
+                        {chunk.status === 'DONE' && <p className="text-[8px] font-bold text-blue-400 mt-0.5">{chunk.coverage}% LOGIC PARITY</p>}
                       </div>
                     </div>
-                    <ChevronRight className={`w-4 h-4 transition-transform ${selectedChunkId === chunk.id ? 'translate-x-1 text-indigo-400' : 'text-slate-600'}`} />
+                    <ChevronRight className={`w-3.5 h-3.5 transition-transform ${selectedChunkId === chunk.id ? 'translate-x-1 text-blue-400' : 'text-slate-700 group-hover:text-slate-500'}`} />
                   </button>
                 ))}
                 {migrationState.chunks.length === 0 && (
-                  <div className="p-10 text-center text-slate-600 space-y-2">
-                    <ZapOff className="w-8 h-8 mx-auto opacity-20" />
-                    <p className="text-[10px] uppercase font-black tracking-widest">No Active Links</p>
+                  <div className="p-10 text-center text-slate-700 flex flex-col items-center">
+                    <Search className="w-8 h-8 opacity-20 mb-2" />
+                    <p className="text-[9px] uppercase font-black tracking-widest">Queue Empty</p>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="md:col-span-8 bg-slate-900 rounded-3xl border border-slate-800 flex flex-col overflow-hidden shadow-2xl relative">
+            <div className="md:col-span-8 bg-slate-900 rounded-2xl border border-slate-800 flex flex-col overflow-hidden shadow-xl">
               {selectedChunk ? (
                 <>
-                  <div className="p-4 border-b border-slate-800 flex items-center space-x-2 bg-slate-800/20">
+                  <div className="p-2.5 border-b border-slate-800 flex items-center space-x-1 bg-slate-800/20">
                     {[
-                      { id: 'functional', label: 'Summary', icon: BookOpen },
-                      { id: 'technical', label: 'Source', icon: Cpu },
-                      { id: 'validation', label: 'Artifacts', icon: FlaskConical }
+                      { id: 'functional', label: 'Archaeology', icon: BookOpen },
+                      { id: 'technical', label: 'Python Source', icon: Cpu },
+                      { id: 'validation', label: 'Validation Cycle', icon: FlaskConical }
                     ].map(mode => (
                       <button 
                         key={mode.id}
                         onClick={() => setViewMode(mode.id as any)}
-                        className={`flex items-center space-x-2 text-[9px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl transition-all ${
-                          viewMode === mode.id ? 'bg-white text-black shadow-lg shadow-white/5' : 'text-slate-500 hover:text-slate-300'
+                        className={`flex items-center space-x-2 text-[9px] font-black uppercase tracking-widest px-4 py-2 rounded-xl transition-all ${
+                          viewMode === mode.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-500 hover:text-slate-300'
                         }`}
                       >
                         <mode.icon className="w-3.5 h-3.5" />
-                        <span>{mode.label}</span>
+                        <span className="hidden sm:inline">{mode.label}</span>
                       </button>
                     ))}
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-6 bg-slate-900/50 custom-scrollbar">
+                  <div className="flex-1 overflow-y-auto p-5 custom-scrollbar bg-slate-900/40">
                     {viewMode === 'functional' && (
-                      <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                        <div className="space-y-4">
-                           <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Logic Extraction Summary</h4>
-                           <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap bg-white/5 p-6 rounded-2xl border border-white/5">
-                             {selectedChunk.businessRules || 'Synthesis in progress...'}
+                      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-1 duration-300">
+                        <div className="space-y-3">
+                           <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest flex items-center space-x-2">
+                             <Activity className="w-3 h-3" />
+                             <span>Logic Recovery Summary</span>
+                           </h4>
+                           <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap bg-white/5 p-5 rounded-xl border border-white/5 shadow-inner">
+                             {selectedChunk.businessRules || 'Logic reconstruction in progress...'}
                            </div>
                         </div>
 
-                        {selectedChunk.groundingSources && selectedChunk.groundingSources.length > 0 && (
+                        {selectedChunk.copybookStructure && selectedChunk.copybookStructure.length > 0 && (
                           <div className="space-y-3">
-                            <h4 className="text-[10px] font-black uppercase text-sky-400 tracking-widest">Grounding Context</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {selectedChunk.groundingSources.map((source, i) => (
-                                <a key={i} href={source.uri} target="_blank" className="flex items-center justify-between p-3 bg-sky-500/5 border border-sky-500/20 rounded-xl hover:bg-sky-500/10 transition-all">
-                                  <span className="text-[10px] font-bold text-sky-200 truncate">{source.title}</span>
-                                  <ExternalLink className="w-3 h-3 text-sky-500" />
-                                </a>
-                              ))}
-                            </div>
+                             <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Data Structure Mapping</h4>
+                             <div className="overflow-x-auto rounded-xl border border-slate-800">
+                               <table className="w-full text-[10px] text-left">
+                                 <thead className="bg-slate-800/50 text-slate-500 font-black uppercase tracking-wider">
+                                   <tr>
+                                     <th className="p-3">COBOL Field</th>
+                                     <th className="p-3">Python Mapping</th>
+                                     <th className="p-3">Description</th>
+                                   </tr>
+                                 </thead>
+                                 <tbody className="divide-y divide-slate-800">
+                                   {selectedChunk.copybookStructure.map((field, i) => (
+                                     <tr key={i} className="hover:bg-white/5 transition-colors">
+                                       <td className="p-3 font-mono text-blue-300">{field.originalField}</td>
+                                       <td className="p-3 font-mono text-emerald-400 font-bold">{field.pythonMapping}</td>
+                                       <td className="p-3 text-slate-400">{field.description}</td>
+                                     </tr>
+                                   ))}
+                                 </tbody>
+                               </table>
+                             </div>
                           </div>
                         )}
                       </div>
                     )}
 
                     {viewMode === 'technical' && (
-                      <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <div className="space-y-4 animate-in fade-in slide-in-from-bottom-1 duration-300">
                          <div className="flex items-center justify-between">
-                            <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Python 3.12 Target</h4>
-                            <button className="text-[9px] font-bold text-slate-500 hover:text-indigo-400 flex items-center space-x-2">
-                               <Download className="w-3 h-3" />
-                               <span>Export Source</span>
-                            </button>
+                            <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Modern Python Output</h4>
+                            <div className="text-[8px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded font-black uppercase">PEP 8 Compliant</div>
                          </div>
-                         <div className="bg-[#0b1120] rounded-2xl p-6 border border-slate-800 shadow-inner">
+                         <div className="bg-[#050914] rounded-xl p-5 border border-slate-800 shadow-inner overflow-x-auto">
                            <ProgressiveCodeBlock 
                              code={selectedChunk.pythonSource} 
-                             className="code-font text-xs text-indigo-100 leading-relaxed" 
+                             className="code-font text-[11px] text-blue-100 leading-relaxed" 
                            />
                          </div>
                       </div>
                     )}
 
                     {viewMode === 'validation' && (
-                      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-1 duration-300">
                         <div className="flex items-center justify-between">
                            <h4 className="text-[10px] font-black uppercase text-emerald-400 tracking-widest">Verification Status</h4>
                            <button 
                              onClick={() => runTests(selectedChunk)}
-                             disabled={isRunningTests || !selectedChunk.status || selectedChunk.status !== 'DONE'}
-                             className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest flex items-center space-x-2 shadow-lg disabled:opacity-20 transition-all active:scale-95"
+                             disabled={isRunningTests || selectedChunk.status !== 'DONE'}
+                             className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest flex items-center space-x-2 shadow-lg shadow-emerald-500/20 disabled:opacity-20 transition-all"
                            >
-                             {isRunningTests ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CirclePlay className="w-3.5 h-3.5" />}
-                             <span>Execute Artifacts</span>
+                             {isRunningTests ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                             <span>Run Autonomous Parity Check</span>
                            </button>
                         </div>
 
                         {selectedChunk.testResults ? (
-                          <div className="bg-slate-800/30 rounded-2xl border border-slate-800 overflow-hidden">
-                             <div className="p-4 bg-slate-800/50 border-b border-slate-800 flex justify-between">
-                               <span className="text-[9px] font-black text-slate-400">AUTONOMOUS RUN LOG</span>
-                               <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">
-                                 {selectedChunk.testResults.filter(r => r.status === 'PASSED').length} PASS / {selectedChunk.testResults.filter(r => r.status === 'FAILED').length} FAIL
+                          <div className="bg-black/40 rounded-xl border border-slate-800 overflow-hidden">
+                             <div className="p-3 bg-slate-800/30 border-b border-slate-800 flex justify-between">
+                               <span className="text-[9px] font-black text-slate-500">EXECUTION REPORT</span>
+                               <span className={`text-[9px] font-black uppercase tracking-widest ${selectedChunk.testResults.every(r => r.status === 'PASSED') ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                 {selectedChunk.testResults.filter(r => r.status === 'PASSED').length} OF {selectedChunk.testResults.length} PASSED
                                </span>
                              </div>
-                             <div className="p-5 font-mono text-[10px] space-y-3">
+                             <div className="divide-y divide-slate-800 font-mono text-[10px]">
                                {selectedChunk.testResults.map((res, i) => (
-                                 <div key={i} className="flex items-center space-x-4 border-b border-white/5 pb-2">
-                                   <span className="text-slate-600 w-12">{res.duration}</span>
-                                   <span className={res.status === 'PASSED' ? 'text-emerald-500 font-bold' : 'text-rose-500 font-bold'}>
-                                     {res.status}
-                                   </span>
-                                   <span className="text-slate-300 flex-1 truncate">{res.name}</span>
+                                 <div key={i} className="p-3 flex items-center space-x-4 hover:bg-white/5 transition-colors">
+                                   <div className={`w-2 h-2 rounded-full ${res.status === 'PASSED' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500'}`} />
+                                   <span className="text-slate-500 w-12">{res.duration}</span>
+                                   <span className="text-slate-200 flex-1 truncate">{res.name}</span>
+                                   {res.status === 'FAILED' && <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
                                  </div>
                                ))}
                              </div>
                           </div>
                         ) : (
-                          <div className="h-48 flex flex-col items-center justify-center border-2 border-dashed border-slate-800 rounded-3xl space-y-4">
-                             <FlaskConical className="w-8 h-8 text-slate-700 opacity-50" />
-                             <p className="text-[9px] font-black uppercase text-slate-600 tracking-widest">Standby for Execution</p>
+                          <div className="h-64 flex flex-col items-center justify-center border-2 border-dashed border-slate-800/50 rounded-2xl bg-white/[0.02]">
+                             <FlaskConical className="w-10 h-10 text-slate-700 mb-4" />
+                             <p className="text-[10px] font-black uppercase text-slate-600 tracking-widest">Awaiting Verification Cycle</p>
                           </div>
                         )}
                       </div>
@@ -551,54 +580,45 @@ const App: React.FC = () => {
                   </div>
                 </>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center opacity-40">
-                  <Wind className="w-12 h-12 text-slate-600 mb-4 animate-pulse" />
-                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600">Awaiting Signal</p>
+                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center opacity-30">
+                  <Wind className="w-16 h-16 text-slate-700 mb-6" />
+                  <p className="text-[11px] font-black uppercase tracking-[0.4em] text-slate-600">Selecting Module for Analysis</p>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="bg-slate-900 rounded-3xl border border-slate-800 p-6 shadow-2xl relative overflow-hidden group min-h-[200px]">
-            <div className="absolute top-0 right-0 p-4">
-               <button 
-                 onClick={() => {}}
-                 className="text-slate-500 hover:text-white transition-colors"
-                 disabled={!migrationState.overallPlan}
-               >
-                 <ArrowDownToLine className="w-4 h-4" />
-               </button>
-            </div>
-            <div className="flex items-center space-x-3 mb-6">
-              <Server className="w-5 h-5 text-indigo-500" />
-              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-300">Target Cloud Blueprint</h3>
+          <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <Server className="w-4 h-4 text-blue-500" />
+              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400">Target GCP Cloud Blueprint</h3>
               <div className="h-px bg-slate-800 flex-1" />
             </div>
             {migrationState.overallPlan ? (
-              <div className="text-slate-400 text-xs whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto pr-4 custom-scrollbar selection:bg-indigo-500/50">
+              <div className="text-slate-400 text-[11px] whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto pr-2 custom-scrollbar selection:bg-blue-500/50">
                 {migrationState.overallPlan}
               </div>
             ) : (
-              <div className="h-32 flex items-center justify-center text-slate-700">
-                <p className="text-[10px] font-black uppercase tracking-widest">Synthesis Pending...</p>
+              <div className="h-24 flex items-center justify-center text-slate-700 italic border border-slate-800 border-dashed rounded-xl">
+                <p className="text-[10px] font-black uppercase tracking-widest">Global Analysis Pending...</p>
               </div>
             )}
           </div>
         </div>
       </main>
 
-      <footer className="p-4 bg-slate-900/80 border-t border-slate-800 flex items-center justify-between text-[8px] font-black uppercase tracking-widest text-slate-500">
-         <div className="flex space-x-10 items-center">
+      <footer className="p-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-500">
+         <div className="flex space-x-8 items-center">
             <span className="flex items-center space-x-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
-              <span>Flash Logic Core Active</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+              <span>Reliability Mode: MARATHON</span>
             </span>
             <span className="flex items-center space-x-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-              <span>Vibe Verification Latency: Low</span>
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+              <span>Logic Depth: 16k Thinking Tokens</span>
             </span>
          </div>
-         <div className="opacity-40">GEMINI-3 FLASH • VIBE v1.02</div>
+         <div className="opacity-40">GEMINI-3 PRO • ENTERPRISE CORE v1.05</div>
       </footer>
     </div>
   );

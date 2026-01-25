@@ -7,7 +7,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 /**
  * Utility function to handle exponential backoff for API calls.
  */
-async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
+async function callWithRetry<T>(fn: () => Promise<T>, retries = 5, delay = 2000): Promise<T> {
   try {
     return await fn();
   } catch (error: any) {
@@ -15,8 +15,9 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000)
     const isRetryable = errorString.includes("503") || errorString.includes("429") || errorString.includes("overloaded");
     
     if (retries > 0 && isRetryable) {
+      console.warn(`API Busy. Retrying in ${delay}ms... (${retries} left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      return callWithRetry(fn, retries - 1, delay * 1.5);
+      return callWithRetry(fn, retries - 1, delay * 2);
     }
     throw error;
   }
@@ -25,8 +26,8 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000)
 export const researchModernEquivalents = async (query: string): Promise<{ research: string, sources: GroundingSource[] }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Fast Lookup: Find modern Python libraries and GCP patterns for: ${query}. 
-    Focus on high-performance enterprise migration best practices.`,
+    contents: `Industry Research: Find modern Python libraries and GCP architectural patterns for migrating legacy: ${query}. 
+    Specifically look for equivalents to COBOL file handling (VSAM, Indexed, Sequential) and CICS transaction patterns.`,
     config: {
       tools: [{ googleSearch: {} }]
     }
@@ -38,7 +39,7 @@ export const researchModernEquivalents = async (query: string): Promise<{ resear
     chunks.forEach((chunk: any) => {
       if (chunk.web) {
         sources.push({
-          title: chunk.web.title || "Industry Resource",
+          title: chunk.web.title || "Technical Resource",
           uri: chunk.web.uri
         });
       }
@@ -52,18 +53,18 @@ export const researchModernEquivalents = async (query: string): Promise<{ resear
 };
 
 export const analyzeLegacyCodebase = async (fullCode: string) => {
-  // We keep a small thinking budget here as the initial audit sets the "Vibe" for the whole project
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Rapid System Audit:
-    1. Industry Domain.
-    2. Critical Capabilities.
-    3. Optimized GCP Target.
-    Source: ${fullCode.substring(0, 10000)}...`,
+    model: 'gemini-3-pro-preview',
+    contents: `Perform an Autonomous Deep Audit on this legacy codebase (29+ files potentially).
+    1. Identify the core domain and logical boundaries.
+    2. Map out the File Access patterns (Sequential, Indexed/VSAM, Relative).
+    3. Define the Global State/Communication Area (COMMAREA) dependencies.
+    4. Propose a GCP architecture (Cloud Spanner, SQL, or GCS) based on the observed data access.
+    
+    Source Digest: ${fullCode.substring(0, 15000)}...`,
     config: {
       temperature: 0.1,
-      // Reduced thinking budget for faster "Vibe" feedback
-      thinkingConfig: { thinkingBudget: 2048 }
+      thinkingConfig: { thinkingBudget: 16384 }
     }
   }));
   return response.text;
@@ -71,9 +72,12 @@ export const analyzeLegacyCodebase = async (fullCode: string) => {
 
 export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: { name: string, code: string }[] }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Break this COBOL into logical business modules. Return JSON.
-    Code: ${fullCode}`,
+    model: 'gemini-3-pro-preview',
+    contents: `Deconstruct this large legacy codebase into high-fidelity logical modules. 
+    Crucial: Do not aggregate unrelated files. Each major COBOL program or subprogram should be its own module.
+    Ensure 'FILE SECTION' and 'WORKING-STORAGE' context is preserved or noted for each module.
+    Return a comprehensive JSON array.
+    Code: ${fullCode.substring(0, 20000)}`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
@@ -97,9 +101,11 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
   }));
   
   try {
-    return JSON.parse(response.text || '{"chunks": []}');
+    const parsed = JSON.parse(response.text || '{"chunks": []}');
+    if (parsed.chunks && parsed.chunks.length > 0) return parsed;
+    throw new Error("Empty chunks returned");
   } catch (e) {
-    return { chunks: [{ name: "Main Core", code: fullCode }] };
+    return { chunks: [{ name: "Core Module", code: fullCode }] };
   }
 };
 
@@ -110,16 +116,22 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
   cloudTargetArchitecture: CloudMapping[] 
 }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-3-pro-preview',
     contents: `
+    Target: Modern Python 3.12 Enterprise Implementation.
     Module: ${chunk.name}.
     Context: ${modernResearch}
-    Target: Modern Python 3.12 + GCP native.
-    Legacy Logic Preservation is mandatory.
+    
+    MANDATORY REQUIREMENTS:
+    1. FILE ACCESS: Map COBOL file modes (Sequential, Indexed, Relative) to appropriate Python persistence patterns (e.g. Pandas for Seq, SQLAlchemy/SQL for Indexed/VSAM).
+    2. DATA INTEGRITY: Implement specific data validation for record formats and PIC clauses.
+    3. STATE: Map COMMAREA or LINKAGE SECTION to FastAPI/Flask session or parameter objects.
+    4. PARITY: Ensure every 'IF', 'PERFORM', and 'EVALUATE' block is logically represented.
+    
     Source: ${chunk.cobolSource}`,
     config: {
       temperature: 0.1,
-      // Thinking budget removed for maximum Vibe speed
+      thinkingConfig: { thinkingBudget: 16384 },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -160,18 +172,20 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
   try {
     return JSON.parse(response.text || '{}');
   } catch (e) {
-    throw new Error("Logic recovery failed to parse.");
+    throw new Error(`Logic Archaeology failed for ${chunk.name}`);
   }
 };
 
 export const generateTests = async (pythonCode: string, cobolReference: string): Promise<{ testCode: string, coverageEstimate: number }> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Create Pytest suite for functional parity verification.
+    model: 'gemini-3-pro-preview',
+    contents: `Synthesize a rigorous Pytest suite for functional parity verification.
+    The tests MUST mock the File Access layer to verify that Python correctly handles what was previously COBOL file operations.
     Python: ${pythonCode}
-    COBOL: ${cobolReference}`,
+    COBOL Reference: ${cobolReference}`,
     config: {
       temperature: 0.1,
+      thinkingConfig: { thinkingBudget: 4096 },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -194,9 +208,9 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
 export const executeValidation = async (pythonCode: string, testCode: string): Promise<TestResult[]> => {
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `Run virtual tests and return report.
-    Code: ${pythonCode}
-    Tests: ${testCode}`,
+    contents: `Execute this virtual validation cycle.
+    IMPLEMENTATION: ${pythonCode}
+    TEST SUITE: ${testCode}`,
     config: {
       responseMimeType: 'application/json',
       responseSchema: {
