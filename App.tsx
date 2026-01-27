@@ -37,7 +37,8 @@ import {
   Archive,
   FileText,
   ShieldAlert,
-  FileJson
+  FileJson,
+  Link2
 } from 'lucide-react';
 import { MigrationStatus, MigrationState, CodeChunk, TestResult } from './types';
 import * as gemini from './services/geminiService';
@@ -87,7 +88,7 @@ const ProgressiveCodeBlock: React.FC<{
   }
 
   return (
-    <pre className={className}>
+    <pre className={`${className} whitespace-pre-wrap break-all md:break-normal`}>
       {displayLines.join('\n')}
       {!isFinished && (
         <div className="flex items-center space-x-2 mt-4 text-blue-400 font-sans italic text-[10px]">
@@ -532,10 +533,21 @@ const App: React.FC = () => {
                       {viewMode === 'functional' && (
                         <div className="space-y-6">
                           <div className="space-y-3">
-                             <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest flex items-center space-x-2">
-                               <Activity className="w-3 h-3" />
-                               <span>Business Rule Extraction</span>
-                             </h4>
+                             <div className="flex items-center justify-between">
+                               <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest flex items-center space-x-2">
+                                 <Activity className="w-3 h-3" />
+                                 <span>Business Rule Extraction</span>
+                               </h4>
+                               {selectedChunk.businessRules && (
+                                 <button 
+                                   onClick={() => copyToClipboard(selectedChunk.businessRules || '', 'rules-copy')}
+                                   className="text-[9px] text-slate-500 hover:text-slate-300 flex items-center space-x-1"
+                                 >
+                                   <Copy className="w-3 h-3" />
+                                   <span>{copiedId === 'rules-copy' ? 'Copied' : 'Copy'}</span>
+                                 </button>
+                               )}
+                             </div>
                              <div className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap bg-white/5 p-5 rounded-xl border border-white/5 font-mono shadow-inner">
                                {selectedChunk.businessRules || 'Synthesizing module behavior...'}
                              </div>
@@ -565,6 +577,32 @@ const App: React.FC = () => {
                                   </table>
                                 </div>
                              </div>
+                          )}
+
+                          {selectedChunk.groundingSources && selectedChunk.groundingSources.length > 0 && (
+                            <div className="space-y-3 pt-4 border-t border-slate-800/50">
+                               <h4 className="text-[10px] font-black uppercase text-sky-400 tracking-widest flex items-center space-x-2">
+                                 <Globe className="w-3 h-3" />
+                                 <span>Modern Context & Grounding</span>
+                               </h4>
+                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                 {selectedChunk.groundingSources.map((source, i) => (
+                                   <a 
+                                     key={i} 
+                                     href={source.uri} 
+                                     target="_blank" 
+                                     rel="noopener noreferrer"
+                                     className="bg-sky-500/5 border border-sky-500/10 p-3 rounded-xl flex items-center justify-between group hover:bg-sky-500/10 transition-all"
+                                   >
+                                     <div className="flex items-center space-x-3 overflow-hidden">
+                                       <Link2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                       <span className="text-[10px] text-slate-300 truncate font-bold uppercase">{source.title}</span>
+                                     </div>
+                                     <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-sky-400 shrink-0" />
+                                   </a>
+                                 ))}
+                               </div>
+                            </div>
                           )}
                         </div>
                       )}
@@ -629,8 +667,12 @@ const App: React.FC = () => {
                                </div>
                             </div>
                           ) : (
-                            <div className="bg-black/40 rounded-xl border border-slate-800 p-5 font-mono text-[10px] text-slate-400 leading-relaxed overflow-x-auto">
-                              {selectedChunk.unitTest || 'Tests ready for execution...'}
+                            <div className="bg-black/40 rounded-xl border border-slate-800 p-5 shadow-inner overflow-x-auto min-h-[300px]">
+                              <ProgressiveCodeBlock 
+                                code={selectedChunk.unitTest} 
+                                placeholder="Generating parity tests..."
+                                className="code-font text-[11px] text-emerald-100 leading-relaxed" 
+                              />
                             </div>
                           )}
                         </div>
