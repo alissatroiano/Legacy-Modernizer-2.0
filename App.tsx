@@ -36,7 +36,8 @@ import {
   ClipboardCheck,
   Archive,
   FileText,
-  ShieldAlert
+  ShieldAlert,
+  FileJson
 } from 'lucide-react';
 import { MigrationStatus, MigrationState, CodeChunk, TestResult } from './types';
 import * as gemini from './services/geminiService';
@@ -122,14 +123,12 @@ const App: React.FC = () => {
     setLogs(prev => [...prev.slice(-400), { msg, type }]);
   }, []);
 
-  // Reliability Check: Ensure logs scroll
   useEffect(() => {
     if (logEndRef.current) {
       logEndRef.current.scrollIntoView({ behavior: 'auto' });
     }
   }, [logs]);
 
-  // Initial Boot-up Test
   useEffect(() => {
     addLog("Logic Lift AI Kernel initialized.", "success");
     addLog("System Stream: CONNECTED.", "info");
@@ -152,6 +151,29 @@ const App: React.FC = () => {
       addLog("TEST 3: File Reader Buffer - READY", "success");
       addLog("All systems operational. Ready for ingestion.", "info");
     }, 1000);
+  };
+
+  const runParityCycle = async (chunk: CodeChunk) => {
+    if (!chunk.pythonSource || !chunk.unitTest || isRunningTests) return;
+    setIsRunningTests(true);
+    addLog(`Executing parity validation for ${chunk.name}...`, 'thinking');
+    try {
+      const results = await gemini.executeValidation(chunk.pythonSource, chunk.unitTest);
+      setMigrationState(prev => ({
+        ...prev,
+        chunks: prev.chunks.map(c => c.id === chunk.id ? { ...c, testResults: results } : c)
+      }));
+      const failures = results.filter(r => r.status === 'FAILED').length;
+      if (failures === 0) {
+        addLog(`Parity check PASSED for ${chunk.name}.`, 'success');
+      } else {
+        addLog(`${failures} parity deviations detected in ${chunk.name}.`, 'error');
+      }
+    } catch (error) {
+      addLog(`Validation Fault: ${error}`, 'error');
+    } finally {
+      setIsRunningTests(false);
+    }
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -274,6 +296,26 @@ const App: React.FC = () => {
     addLog(`Exported ${a.download}`, 'info');
   };
 
+  const downloadMarkdown = (chunk: CodeChunk) => {
+    if (!chunk.pythonSource) return;
+    let md = `# Archaeology Report: ${chunk.name}\n\n`;
+    md += `## Business Rules\n${chunk.businessRules}\n\n`;
+    md += `## Data Mapping\n| Legacy Field | Modern Type | Integrity Rule |\n|---|---|---|\n`;
+    chunk.copybookStructure?.forEach(f => {
+      md += `| ${f.originalField} | ${f.dataType} | ${f.description} |\n`;
+    });
+    md += `\n## Modern Implementation\n\`\`\`python\n${chunk.pythonSource}\n\`\`\`\n\n`;
+    md += `## Parity Tests\n\`\`\`python\n${chunk.unitTest}\n\`\`\`\n`;
+
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${chunk.name.replace(/\.[^/.]+$/, "")}_report.md`;
+    a.click();
+    addLog(`Exported Markdown report: ${a.download}`, 'info');
+  };
+
   const bulkExport = () => {
     const done = migrationState.chunks.filter(c => c.status === 'DONE');
     if (!done.length) return;
@@ -332,236 +374,302 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 max-w-screen-2xl mx-auto w-full p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left column: Source and System Stream */}
-        <div className="lg:col-span-4 flex flex-col space-y-4">
-          <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col shadow-xl h-[450px]">
-            <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-800/20">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center space-x-2">
-                <Database className="w-3.5 h-3.5" />
-                <span>Source Ingestion</span>
-              </span>
-              <button 
-                onClick={() => fileInputRef.current?.click()}
+      <main className="flex-1 max-w-screen-2xl mx-auto w-full p-4 flex flex-col space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1">
+          {/* Left column: Source and System Stream */}
+          <div className="lg:col-span-4 flex flex-col space-y-4">
+            <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col shadow-xl h-[450px]">
+              <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-800/20">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center space-x-2">
+                  <Database className="w-3.5 h-3.5" />
+                  <span>Source Ingestion</span>
+                </span>
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={migrationState.status !== MigrationStatus.IDLE}
+                  className="text-[9px] font-black bg-blue-600 text-white px-3 py-1.5 rounded-lg uppercase hover:bg-blue-500 transition-all"
+                >
+                  Upload
+                </button>
+              </div>
+              <textarea 
+                value={inputCode}
+                onChange={(e) => setInputCode(e.target.value)}
+                className="flex-1 p-4 code-font text-[11px] bg-transparent text-blue-200 focus:outline-none resize-none leading-relaxed custom-scrollbar"
+                placeholder="Paste COBOL programs or copybooks..."
                 disabled={migrationState.status !== MigrationStatus.IDLE}
-                className="text-[9px] font-black bg-blue-600 text-white px-3 py-1.5 rounded-lg uppercase hover:bg-blue-500 transition-all"
-              >
-                Upload
-              </button>
+              />
+              <div className="p-4 border-t border-slate-800 bg-slate-800/10">
+                <button 
+                  onClick={handleStartMigration}
+                  disabled={migrationState.status !== MigrationStatus.IDLE || !inputCode}
+                  className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center space-x-2 shadow-lg hover:bg-blue-500 transition-all disabled:opacity-20"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span className="uppercase tracking-widest text-[11px]">Deploy Modernization Core</span>
+                </button>
+              </div>
             </div>
-            <textarea 
-              value={inputCode}
-              onChange={(e) => setInputCode(e.target.value)}
-              className="flex-1 p-4 code-font text-[11px] bg-transparent text-blue-200 focus:outline-none resize-none leading-relaxed custom-scrollbar"
-              placeholder="Paste COBOL programs or copybooks..."
-              disabled={migrationState.status !== MigrationStatus.IDLE}
-            />
-            <div className="p-4 border-t border-slate-800 bg-slate-800/10">
-              <button 
-                onClick={handleStartMigration}
-                disabled={migrationState.status !== MigrationStatus.IDLE || !inputCode}
-                className="w-full py-3.5 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center space-x-2 shadow-lg hover:bg-blue-500 transition-all disabled:opacity-20"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                <span className="uppercase tracking-widest text-[11px]">Deploy Modernization Core</span>
-              </button>
+
+            <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex-1 flex flex-col shadow-xl min-h-[300px]">
+               <div className="p-3 border-b border-slate-800 flex items-center space-x-2 bg-slate-800/20">
+                 <Terminal className="w-3.5 h-3.5 text-emerald-400" />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">System Stream</span>
+               </div>
+               <div className="p-4 space-y-2.5 overflow-y-auto flex-1 font-mono text-[10px] bg-black/40 custom-scrollbar">
+                 {logs.length === 0 && <p className="text-slate-600 italic">Waiting for input signal...</p>}
+                 {logs.map((log, i) => (
+                   <div key={i} className="flex items-start space-x-2">
+                     <div className={`mt-1.5 w-1 h-2 rounded-full shrink-0 ${
+                       log.type === 'error' ? 'bg-rose-500' : 
+                       log.type === 'success' ? 'bg-emerald-500' : 
+                       log.type === 'thinking' ? 'bg-blue-500 animate-pulse' : 'bg-slate-700'
+                     }`} />
+                     <span className={`leading-relaxed ${
+                       log.type === 'error' ? 'text-rose-400' : 
+                       log.type === 'success' ? 'text-emerald-300' : 
+                       log.type === 'thinking' ? 'text-blue-300' : 'text-slate-400'
+                     }`}>
+                       {log.msg}
+                     </span>
+                   </div>
+                 ))}
+                 <div ref={logEndRef} className="h-4" />
+               </div>
             </div>
           </div>
 
-          <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex-1 flex flex-col shadow-xl min-h-[300px]">
-             <div className="p-3 border-b border-slate-800 flex items-center space-x-2 bg-slate-800/20">
-               <Terminal className="w-3.5 h-3.5 text-emerald-400" />
-               <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">System Stream</span>
-             </div>
-             <div className="p-4 space-y-2.5 overflow-y-auto flex-1 font-mono text-[10px] bg-black/40 custom-scrollbar">
-               {logs.length === 0 && <p className="text-slate-600 italic">Waiting for input signal...</p>}
-               {logs.map((log, i) => (
-                 <div key={i} className="flex items-start space-x-2">
-                   <div className={`mt-1.5 w-1 h-2 rounded-full shrink-0 ${
-                     log.type === 'error' ? 'bg-rose-500' : 
-                     log.type === 'success' ? 'bg-emerald-500' : 
-                     log.type === 'thinking' ? 'bg-blue-500 animate-pulse' : 'bg-slate-700'
-                   }`} />
-                   <span className={`leading-relaxed ${
-                     log.type === 'error' ? 'text-rose-400' : 
-                     log.type === 'success' ? 'text-emerald-300' : 
-                     log.type === 'thinking' ? 'text-blue-300' : 'text-slate-400'
-                   }`}>
-                     {log.msg}
-                   </span>
-                 </div>
-               ))}
-               <div ref={logEndRef} className="h-4" />
-             </div>
-          </div>
-        </div>
+          {/* Right column: Details and Output */}
+          <div className="lg:col-span-8 flex flex-col space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'Modules Ready', value: migrationState.chunks.filter(c => c.status === 'DONE').length, icon: CheckCircle, color: 'emerald' },
+                { label: 'System Parity', value: `${migrationState.chunks.length > 0 ? Math.round(migrationState.chunks.filter(c => c.status === 'DONE').reduce((a, b) => a + (b.coverage || 0), 0) / Math.max(1, migrationState.chunks.filter(c => c.status === 'DONE').length)) : 0}%`, icon: ShieldCheck, color: 'blue' },
+                { label: 'Artifacts', value: migrationState.chunks.length, icon: FileCode, color: 'indigo' },
+                { label: 'Grounding', value: migrationState.chunks.filter(c => c.groundingSources?.length).length, icon: Globe, color: 'sky' }
+              ].map((stat, i) => (
+                <div key={i} className={`bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg border-l-4 border-l-${stat.color}-500`}>
+                  <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">{stat.label}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-black text-white">{stat.value}</span>
+                    <stat.icon className={`w-5 h-5 text-${stat.color}-500/30`} />
+                  </div>
+                </div>
+              ))}
+            </div>
 
-        {/* Right column: Details and Output */}
-        <div className="lg:col-span-8 flex flex-col space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: 'Modules Ready', value: migrationState.chunks.filter(c => c.status === 'DONE').length, icon: CheckCircle, color: 'emerald' },
-              { label: 'System Parity', value: `${migrationState.chunks.length > 0 ? Math.round(migrationState.chunks.filter(c => c.status === 'DONE').reduce((a, b) => a + (b.coverage || 0), 0) / Math.max(1, migrationState.chunks.filter(c => c.status === 'DONE').length)) : 0}%`, icon: ShieldCheck, color: 'blue' },
-              { label: 'Artifacts', value: migrationState.chunks.length, icon: FileCode, color: 'indigo' },
-              { label: 'Grounding', value: migrationState.chunks.filter(c => c.groundingSources?.length).length, icon: Globe, color: 'sky' }
-            ].map((stat, i) => (
-              <div key={i} className={`bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-lg border-l-4 border-l-${stat.color}-500`}>
-                <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-1">{stat.label}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-2xl font-black text-white">{stat.value}</span>
-                  <stat.icon className={`w-5 h-5 text-${stat.color}-500/30`} />
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 flex-1 min-h-0">
+              {/* Queue Selector */}
+              <div className="md:col-span-4 bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col shadow-xl">
+                <div className="p-3 border-b border-slate-800 bg-slate-800/20 flex justify-between items-center">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Recovery Queue</span>
+                </div>
+                <div className="overflow-y-auto flex-1 custom-scrollbar">
+                  {migrationState.chunks.map((chunk) => (
+                    <button 
+                      key={chunk.id}
+                      onClick={() => setSelectedChunkId(chunk.id)}
+                      className={`w-full p-4 flex items-center justify-between border-b border-slate-800/50 transition-all text-left
+                        ${selectedChunkId === chunk.id ? 'bg-blue-600/10 border-l-4 border-l-blue-600' : 'hover:bg-slate-800/40'}`}
+                    >
+                      <div className="flex items-center space-x-3 overflow-hidden">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${chunk.status === 'DONE' ? 'bg-emerald-500' : 'bg-slate-700 animate-pulse'}`} />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black text-slate-200 uppercase truncate">{chunk.name}</p>
+                          <p className="text-[8px] font-bold text-slate-500 mt-0.5">{chunk.status === 'DONE' ? 'VERIFIED' : 'PENDING'}</p>
+                        </div>
+                      </div>
+                      <ChevronRight className={`w-3.5 h-3.5 shrink-0 transition-transform ${selectedChunkId === chunk.id ? 'translate-x-1 text-blue-400' : 'text-slate-700'}`} />
+                    </button>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 flex-1 min-h-0">
-            {/* Queue Selector */}
-            <div className="md:col-span-4 bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden flex flex-col shadow-xl">
-              <div className="p-3 border-b border-slate-800 bg-slate-800/20 flex justify-between items-center">
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Recovery Queue</span>
-              </div>
-              <div className="overflow-y-auto flex-1 custom-scrollbar">
-                {migrationState.chunks.map((chunk) => (
-                  <button 
-                    key={chunk.id}
-                    onClick={() => setSelectedChunkId(chunk.id)}
-                    className={`w-full p-4 flex items-center justify-between border-b border-slate-800/50 transition-all text-left
-                      ${selectedChunkId === chunk.id ? 'bg-blue-600/10 border-l-4 border-l-blue-600' : 'hover:bg-slate-800/40'}`}
-                  >
-                    <div className="flex items-center space-x-3 overflow-hidden">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${chunk.status === 'DONE' ? 'bg-emerald-500' : 'bg-slate-700 animate-pulse'}`} />
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-black text-slate-200 uppercase truncate">{chunk.name}</p>
-                        <p className="text-[8px] font-bold text-slate-500 mt-0.5">{chunk.status === 'DONE' ? 'VERIFIED' : 'PENDING'}</p>
+              {/* View Port */}
+              <div className="md:col-span-8 bg-slate-900 rounded-2xl border border-slate-800 flex flex-col overflow-hidden shadow-xl">
+                {selectedChunk ? (
+                  <>
+                    <div className="p-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-800/20">
+                      <div className="flex items-center space-x-1">
+                        {[
+                          { id: 'functional', label: 'Archaeology', icon: BookOpen },
+                          { id: 'technical', label: 'Source', icon: Cpu },
+                          { id: 'validation', label: 'Tests', icon: FlaskConical }
+                        ].map(mode => (
+                          <button 
+                            key={mode.id}
+                            onClick={() => setViewMode(mode.id as any)}
+                            className={`flex items-center space-x-2 text-[9px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl transition-all ${
+                              viewMode === mode.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
+                            }`}
+                          >
+                            <mode.icon className="w-3.5 h-3.5" />
+                            <span>{mode.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <button 
+                          onClick={() => downloadMarkdown(selectedChunk)}
+                          disabled={!selectedChunk.pythonSource}
+                          className="flex items-center space-x-2 text-[9px] font-black uppercase bg-slate-800 hover:bg-slate-700 text-blue-400 px-3 py-2.5 rounded-xl border border-slate-700 transition-all disabled:opacity-20"
+                          title="Export Report (Markdown)"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => downloadModule(selectedChunk)}
+                          disabled={!selectedChunk.pythonSource}
+                          className="flex items-center space-x-2 text-[9px] font-black uppercase bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2.5 rounded-xl border border-slate-700 transition-all disabled:opacity-20 shadow-xl"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">Export Python</span>
+                        </button>
                       </div>
                     </div>
-                    <ChevronRight className={`w-3.5 h-3.5 shrink-0 transition-transform ${selectedChunkId === chunk.id ? 'translate-x-1 text-blue-400' : 'text-slate-700'}`} />
-                  </button>
-                ))}
+
+                    <div className="flex-1 overflow-y-auto p-5 custom-scrollbar bg-slate-900/40">
+                      {viewMode === 'functional' && (
+                        <div className="space-y-6">
+                          <div className="space-y-3">
+                             <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest flex items-center space-x-2">
+                               <Activity className="w-3 h-3" />
+                               <span>Business Rule Extraction</span>
+                             </h4>
+                             <div className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap bg-white/5 p-5 rounded-xl border border-white/5 font-mono shadow-inner">
+                               {selectedChunk.businessRules || 'Synthesizing module behavior...'}
+                             </div>
+                          </div>
+
+                          {selectedChunk.copybookStructure && (
+                             <div className="space-y-3">
+                                <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Persistence Data Mapping</h4>
+                                <div className="overflow-x-auto rounded-xl border border-slate-800 bg-black/20">
+                                  <table className="w-full text-[10px] text-left">
+                                    <thead className="bg-slate-800 text-slate-500 font-black uppercase">
+                                      <tr>
+                                        <th className="p-3">Legacy Field</th>
+                                        <th className="p-3">Modern Type</th>
+                                        <th className="p-3">Integrity Rule</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-800">
+                                      {selectedChunk.copybookStructure.map((field, i) => (
+                                        <tr key={i} className="hover:bg-white/5 transition-colors">
+                                          <td className="p-3 font-mono text-blue-300">{field.originalField}</td>
+                                          <td className="p-3 font-mono text-emerald-400 font-bold">{field.dataType}</td>
+                                          <td className="p-3 text-slate-400">{field.description}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                             </div>
+                          )}
+                        </div>
+                      )}
+
+                      {viewMode === 'technical' && (
+                        <div className="space-y-4">
+                           <div className="flex items-center justify-between">
+                              <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Modern Python Implementation</h4>
+                              <button 
+                                onClick={() => copyToClipboard(selectedChunk.pythonSource || '', 'py-copy')}
+                                className="flex items-center space-x-2 text-[9px] font-black uppercase bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200"
+                              >
+                                {copiedId === 'py-copy' ? <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                                <span>{copiedId === 'py-copy' ? 'Copied' : 'Copy'}</span>
+                              </button>
+                           </div>
+                           <div className="bg-[#050914] rounded-xl p-5 border border-slate-800 shadow-inner overflow-x-auto min-h-[300px]">
+                             <ProgressiveCodeBlock 
+                               code={selectedChunk.pythonSource} 
+                               className="code-font text-[11px] text-blue-100 leading-relaxed" 
+                             />
+                           </div>
+                        </div>
+                      )}
+
+                      {viewMode === 'validation' && (
+                        <div className="space-y-6">
+                          <div className="flex items-center justify-between">
+                             <h4 className="text-[10px] font-black uppercase text-emerald-400 tracking-widest">Verification Artifacts</h4>
+                             <button 
+                               onClick={() => runParityCycle(selectedChunk)}
+                               disabled={!selectedChunk.pythonSource || isRunningTests}
+                               className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest flex items-center space-x-2 shadow-lg disabled:opacity-20 transition-all"
+                             >
+                               {isRunningTests ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                               <span>Run Parity Cycle</span>
+                             </button>
+                          </div>
+                          
+                          {selectedChunk.testResults ? (
+                            <div className="bg-black/40 rounded-xl border border-slate-800 overflow-hidden shadow-2xl">
+                               <div className="p-3 bg-slate-800/30 border-b border-slate-800 flex justify-between items-center">
+                                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Logic Trace Report</span>
+                                 <div className="flex items-center space-x-3">
+                                   <span className={`text-[10px] font-black px-2 py-0.5 rounded ${selectedChunk.testResults.every(r => r.status === 'PASSED') ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                                     {selectedChunk.testResults.filter(r => r.status === 'PASSED').length} / {selectedChunk.testResults.length} PASSED
+                                   </span>
+                                 </div>
+                               </div>
+                               <div className="divide-y divide-slate-800 font-mono text-[10px]">
+                                 {selectedChunk.testResults.map((res, i) => (
+                                   <div key={i} className="p-4 flex items-center space-x-4 hover:bg-white/5 transition-colors">
+                                     <div className={`w-2 h-2 rounded-full ${res.status === 'PASSED' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`} />
+                                     <span className="text-slate-500 w-16">{res.duration}</span>
+                                     <div className="flex-1 min-w-0">
+                                        <p className="text-slate-200 font-bold truncate">{res.name}</p>
+                                        {res.status === 'FAILED' && <p className="text-rose-400/70 text-[9px] mt-0.5">{res.message || 'Assertion Fault: Modern logic deviates from legacy trace.'}</p>}
+                                     </div>
+                                     {res.status === 'FAILED' && <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />}
+                                   </div>
+                                 ))}
+                               </div>
+                            </div>
+                          ) : (
+                            <div className="bg-black/40 rounded-xl border border-slate-800 p-5 font-mono text-[10px] text-slate-400 leading-relaxed overflow-x-auto">
+                              {selectedChunk.unitTest || 'Tests ready for execution...'}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-12 text-center opacity-20">
+                    <Wind className="w-16 h-16 text-slate-600 mb-6" />
+                    <p className="text-[11px] font-black uppercase tracking-[0.4em] text-slate-600">Selecting module for archaeology</p>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* View Port */}
-            <div className="md:col-span-8 bg-slate-900 rounded-2xl border border-slate-800 flex flex-col overflow-hidden shadow-xl">
-              {selectedChunk ? (
-                <>
-                  <div className="p-2.5 border-b border-slate-800 flex items-center justify-between bg-slate-800/20">
-                    <div className="flex items-center space-x-1">
-                      {[
-                        { id: 'functional', label: 'Archaeology', icon: BookOpen },
-                        { id: 'technical', label: 'Source', icon: Cpu },
-                        { id: 'validation', label: 'Tests', icon: FlaskConical }
-                      ].map(mode => (
-                        <button 
-                          key={mode.id}
-                          onClick={() => setViewMode(mode.id as any)}
-                          className={`flex items-center space-x-2 text-[9px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl transition-all ${
-                            viewMode === mode.id ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'
-                          }`}
-                        >
-                          <mode.icon className="w-3.5 h-3.5" />
-                          <span>{mode.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                    {/* Module Export Button */}
-                    <button 
-                      onClick={() => downloadModule(selectedChunk)}
-                      disabled={!selectedChunk.pythonSource}
-                      className="flex items-center space-x-2 text-[9px] font-black uppercase bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2.5 rounded-xl border border-slate-700 transition-all disabled:opacity-20 shadow-xl"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Export Module</span>
-                    </button>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-5 custom-scrollbar bg-slate-900/40">
-                    {viewMode === 'functional' && (
-                      <div className="space-y-6">
-                        <div className="space-y-3">
-                           <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest flex items-center space-x-2">
-                             <Activity className="w-3 h-3" />
-                             <span>Business Rule Extraction</span>
-                           </h4>
-                           <div className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap bg-white/5 p-5 rounded-xl border border-white/5 font-mono shadow-inner">
-                             {selectedChunk.businessRules || 'Synthesizing module behavior...'}
-                           </div>
-                        </div>
-
-                        {selectedChunk.copybookStructure && (
-                           <div className="space-y-3">
-                              <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Persistence Data Mapping</h4>
-                              <div className="overflow-x-auto rounded-xl border border-slate-800 bg-black/20">
-                                <table className="w-full text-[10px] text-left">
-                                  <thead className="bg-slate-800 text-slate-500 font-black uppercase">
-                                    <tr>
-                                      <th className="p-3">Legacy Field</th>
-                                      <th className="p-3">Modern Type</th>
-                                      <th className="p-3">Integrity Rule</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-800">
-                                    {selectedChunk.copybookStructure.map((field, i) => (
-                                      <tr key={i} className="hover:bg-white/5 transition-colors">
-                                        <td className="p-3 font-mono text-blue-300">{field.originalField}</td>
-                                        <td className="p-3 font-mono text-emerald-400 font-bold">{field.dataType}</td>
-                                        <td className="p-3 text-slate-400">{field.description}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                           </div>
-                        )}
-                      </div>
-                    )}
-
-                    {viewMode === 'technical' && (
-                      <div className="space-y-4">
-                         <div className="flex items-center justify-between">
-                            <h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest">Modern Python Implementation</h4>
-                            <button 
-                              onClick={() => copyToClipboard(selectedChunk.pythonSource || '', 'py-copy')}
-                              className="flex items-center space-x-2 text-[9px] font-black uppercase bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200"
-                            >
-                              {copiedId === 'py-copy' ? <ClipboardCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                              <span>{copiedId === 'py-copy' ? 'Copied' : 'Copy'}</span>
-                            </button>
-                         </div>
-                         <div className="bg-[#050914] rounded-xl p-5 border border-slate-800 shadow-inner overflow-x-auto min-h-[300px]">
-                           <ProgressiveCodeBlock 
-                             code={selectedChunk.pythonSource} 
-                             className="code-font text-[11px] text-blue-100 leading-relaxed" 
-                           />
-                         </div>
-                      </div>
-                    )}
-
-                    {viewMode === 'validation' && (
-                      <div className="space-y-6">
-                        <div className="flex items-center justify-between">
-                           <h4 className="text-[10px] font-black uppercase text-emerald-400 tracking-widest">Verification Artifacts</h4>
-                           <button 
-                             onClick={() => gemini.executeValidation(selectedChunk.pythonSource || '', selectedChunk.unitTest || '')}
-                             disabled={!selectedChunk.pythonSource}
-                             className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest flex items-center space-x-2 shadow-lg disabled:opacity-20"
-                           >
-                             <Play className="w-3.5 h-3.5 fill-current" />
-                             <span>Run Parity Cycle</span>
-                           </button>
-                        </div>
-                        <div className="bg-black/40 rounded-xl border border-slate-800 p-5 font-mono text-[10px] text-slate-400 leading-relaxed overflow-x-auto">
-                          {selectedChunk.unitTest || 'Tests ready for execution...'}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </>
+            {/* System Blueprint Section */}
+            <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                 <div className="flex items-center space-x-3">
+                   <Server className="w-4 h-4 text-blue-500" />
+                   <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400">System Blueprint & Global Topology</h3>
+                   <div className="h-px bg-slate-800 w-24 hidden sm:block" />
+                 </div>
+                 {migrationState.overallPlan && (
+                   <button 
+                     onClick={() => copyToClipboard(migrationState.overallPlan || '', 'plan-copy')}
+                     className="text-[9px] font-black text-slate-500 hover:text-slate-300 transition-colors uppercase"
+                   >
+                     {copiedId === 'plan-copy' ? 'Copied Blueprint' : 'Copy Blueprint'}
+                   </button>
+                 )}
+              </div>
+              {migrationState.overallPlan ? (
+                <div className="text-slate-400 text-[11px] whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto pr-2 custom-scrollbar font-mono bg-black/20 p-4 rounded-xl border border-white/5">
+                  {migrationState.overallPlan}
+                </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center p-12 text-center opacity-20">
-                  <Wind className="w-16 h-16 text-slate-600 mb-6" />
-                  <p className="text-[11px] font-black uppercase tracking-[0.4em] text-slate-600">Selecting module for archaeology</p>
+                <div className="h-24 flex items-center justify-center text-slate-700 border border-slate-800 border-dashed rounded-xl">
+                  <p className="text-[10px] font-black uppercase tracking-widest">Awaiting system audit results...</p>
                 </div>
               )}
             </div>
