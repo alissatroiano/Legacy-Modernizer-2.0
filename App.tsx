@@ -130,7 +130,7 @@ const App: React.FC = () => {
 
   // Welcome log
   useEffect(() => {
-    addLog("LegacyLink Enterprise Core initialized.", "success");
+    addLog("Logic Link Enterprise Core initialized.", "success");
     addLog("Ready for high-fidelity archaeology and system modernization.", "info");
   }, []);
 
@@ -341,8 +341,8 @@ const App: React.FC = () => {
               <Layers className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-black tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">LegacyLink Enterprise</h1>
-              <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Autonomous Logic Archaeology</p>
+              <h1 className="text-lg font-black tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Logic Link</h1>
+              <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">Autonomous Legacy to Modern Logic</p>
             </div>
           </div>
           <div className="flex items-center space-x-4">
