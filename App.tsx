@@ -61,8 +61,6 @@ const ProgressiveCodeBlock: React.FC<{
     let currentIdx = chunkSize;
     let frameId: number;
 
-    /* Thinking budget is now handled internally by the service or ignored */
-    const getThinkingBudget = useCallback(() => undefined, []);
     const streamLines = () => {
       if (currentIdx >= total) {
         setIsFinished(true);
