@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { MigrationStatus, MigrationState, CodeChunk, TestResult } from './types';
 import * as gemini from './services/geminiService';
+import Logo from './Logo';
 
 const ProgressiveCodeBlock: React.FC<{ 
   code?: string; 
@@ -348,8 +349,8 @@ const App: React.FC = () => {
       <header className="p-4 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <div className="bg-blue-600 p-2 rounded-xl shadow-lg shadow-blue-500/20">
-              <Layers className="w-6 h-6 text-white" />
+            <div className="p-1">
+              <Logo />
             </div>
             <div>
               <h1 className="text-lg font-black tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent uppercase">Logic Lift AI</h1>

@@ -25,8 +25,9 @@ export const researchModernEquivalents = async (query: string): Promise<{ resear
     contents: `Industry Research: Find modern Python libraries and GCP architectural patterns for: ${query}. 
     Focus on equivalents for:
     1. VSAM/Indexed file handling (e.g., Cloud Spanner, SQLAlchemy primary key indexing).
-    2. Sequential file processing (fixed-width parsing, streaming GCS).
-    3. Relative file access (Redis, Key-Value data structures).`,
+    2. Sequential file processing (EBCDIC to UTF-8 fixed-width parsing, streaming GCS).
+    3. COMP-3 Packed Decimal handling in modern Python (e.g., bit manipulation or specific banking libraries).
+    4. Relative file access (Redis, Key-Value data structures).`,
     config: {
       tools: [{ googleSearch: {} }]
     }
@@ -50,9 +51,10 @@ export const analyzeLegacyCodebase = async (fullCode: string) => {
     model: 'gemini-3-pro-preview',
     contents: `Autonomous System Audit:
     Analyze the full legacy system.
-    1. Logical Topology: Map all call hierarchies.
-    2. File Management: Identify SEQUENTIAL, INDEXED, and RELATIVE access methods.
-    3. State Tracking: Note COMMAREA or LINKAGE structures.
+    1. Logical Topology: Map all call hierarchies and LINKAGE SECTION dependencies.
+    2. Data Integrity: Identify EBCDIC-specific byte handling and COMP-3 packed decimal usage.
+    3. File Management: Identify SEQUENTIAL, INDEXED, and RELATIVE access methods.
+    4. State Tracking: Note COMMAREA structures for cross-program communication.
     
     Source Digest: ${fullCode.substring(0, 15000)}...`,
     config: {
@@ -71,7 +73,7 @@ export const splitCodeIntoChunks = async (fullCode: string): Promise<{ chunks: {
     
     CRITICAL INSTRUCTION: 
     - You MUST create exactly ONE module for every 'SOURCE_FILE' marker found. 
-    - Do NOT merge files. If there are 29 markers, you MUST return 29 modules.
+    - Do NOT merge programs with copybooks. 
     - Each module name should match the filename provided in the marker.
     - Preserve all DIVISION and SECTION headers for each file.
     
@@ -122,9 +124,10 @@ export const processModuleLogic = async (chunk: CodeChunk, modernResearch: strin
     Context: ${modernResearch}
     
     REQUIREMENTS:
-    1. Handle COBOL file access (Sequential, Indexed, Relative) with modern Python patterns.
-    2. Preserve record integrity and PIC clause validation.
-    3. Implement Repository patterns for Indexed/VSAM data.
+    1. Modernize COBOL data handling: Convert EBCDIC fixed-width record logic to modern Python schemas.
+    2. Preservation: Implement logic to handle COMP-3 packed decimals or byte-level integrity if used.
+    3. File I/O: Handle COBOL file access (Sequential, Indexed, Relative) using modern Repository patterns.
+    4. Business Integrity: Preserve PIC clause validation in modern types.
     
     Source: ${chunk.cobolSource}`,
     config: {
@@ -178,7 +181,7 @@ export const generateTests = async (pythonCode: string, cobolReference: string):
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: `Generate Pytest suite for functional parity.
-    Mock File Access Layer to verify Python logic vs COBOL file operations.
+    CRITICAL: Mock the Data/File Layer to simulate binary EBCDIC record reading vs Python UTF-8 parsing to ensure logic parity.
     Python: ${pythonCode}
     COBOL: ${cobolReference}`,
     config: {
@@ -207,6 +210,7 @@ export const executeValidation = async (pythonCode: string, testCode: string): P
   const response: GenerateContentResponse = await callWithRetry(() => ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: `Virtual Parity Verification.
+    Simulate execution of Python logic against legacy business expectations.
     Implementation: ${pythonCode}
     Tests: ${testCode}`,
     config: {
